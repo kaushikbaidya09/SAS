@@ -17,17 +17,17 @@
       GET/PUT /api/v1/config/{key} and POST /api/v1/config/factory-reset
       endpoints.
     - System Information (main/src/core/sas_sysinfo.h): backs the
-      /api/v1/system/* endpoints.
+      /api/v1/system/x endpoints.
     - File Manager (main/src/storage/sas_file_manager.h): backs the
-      /api/v1/files/* endpoints.
+      /api/v1/files/x endpoints.
     - Wi-Fi Manager (main/src/network/sas_wifi_manager.h): backs the
-      /api/v1/wifi/* endpoints.
+      /api/v1/wifi/x endpoints.
     - BLE Scanner (main/src/network/sas_ble_scanner.h): backs the
-      /api/v1/ble/* endpoints.
+      /api/v1/ble/x endpoints.
     - OTA Manager (main/src/network/sas_ota_manager.h): backs the
-      /api/v1/ota/* endpoints.
+      /api/v1/ota/x endpoints.
     - Authentication (main/src/auth/sas_auth.h): backs the
-      /api/v1/auth/* endpoints and token validation for every
+      /api/v1/auth/x endpoints and token validation for every
       requires_auth route.
 */
 

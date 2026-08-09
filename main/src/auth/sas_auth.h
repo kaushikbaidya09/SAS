@@ -32,21 +32,31 @@
 /* 4. Public types */
 
 /*! An issued authentication session. */
-typedef struct {
-    char    token[33];        ///< 32 hex-digit session token, NUL-terminated.
-    int64_t issued_at_us;     ///< Issue timestamp, microseconds since boot/epoch.
-    int64_t expires_at_us;    ///< Expiry timestamp, microseconds since boot/epoch.
+typedef struct
+{
+    char token[33];        ///< 32 hex-digit session token, NUL-terminated.
+    int64_t issued_at_us;  ///< Issue timestamp, microseconds since boot/epoch.
+    int64_t expires_at_us; ///< Expiry timestamp, microseconds since boot/epoch.
 } sas_auth_session_t;
 
 /* 5. Public constants */
 
-#define SAS_AUTH_ERR_BASE               (0x8D00U) ///< Custom status base for this module.
-#define SAS_AUTH_ERR_INVALID_CREDENTIAL (SAS_AUTH_ERR_BASE + 1U) ///< Login attempted with a wrong username/password.
-#define SAS_AUTH_ERR_TOKEN_EXPIRED      (SAS_AUTH_ERR_BASE + 2U) ///< sas_auth_validate_token() called with a token past its expiry time.
-#define SAS_AUTH_ERR_TOKEN_UNKNOWN      (SAS_AUTH_ERR_BASE + 3U) ///< sas_auth_validate_token()/sas_auth_logout() called with a token not in the session table.
-#define SAS_AUTH_ERR_RATE_LIMITED       (SAS_AUTH_ERR_BASE + 4U) ///< Login attempt arrived before auth.failed_login_delay_ms elapsed since the client's last failure.
+#define SAS_AUTH_ERR_BASE (0x8D00U) ///< Custom status base for this module.
+#define SAS_AUTH_ERR_INVALID_CREDENTIAL \
+    (SAS_AUTH_ERR_BASE + 1U) ///< Login attempted with a wrong username/password.
+#define SAS_AUTH_ERR_TOKEN_EXPIRED \
+    (SAS_AUTH_ERR_BASE +           \
+     2U) ///< sas_auth_validate_token() called with a token past its expiry time.
+#define SAS_AUTH_ERR_TOKEN_UNKNOWN \
+    (SAS_AUTH_ERR_BASE + 3U) ///< sas_auth_validate_token()/sas_auth_logout() called with a token
+                             ///< not in the session table.
+#define SAS_AUTH_ERR_RATE_LIMITED \
+    (SAS_AUTH_ERR_BASE + 4U) ///< Login attempt arrived before auth.failed_login_delay_ms elapsed
+                             ///< since the client's last failure.
 
-#define SAS_AUTH_MAX_SESSIONS (4U) ///< Session pool size placeholder; reconcile with auth.max_sessions at implementation time.
+#define SAS_AUTH_MAX_SESSIONS \
+    (4U) ///< Session pool size placeholder; reconcile with auth.max_sessions at implementation
+         ///< time.
 
 /* 6. Public API declarations */
 
@@ -89,7 +99,7 @@ sas_status_t sas_auth_deinit(void);
              auth.failed_login_delay_ms.
 */
 sas_status_t sas_auth_login(const char *username, const char *password,
-                             sas_auth_session_t *out_session);
+                            sas_auth_session_t *out_session);
 
 /*!
     \brief   Validate a caller-presented session token.
@@ -123,5 +133,4 @@ sas_status_t sas_auth_logout(const char *token);
              is NULL; SAS_AUTH_ERR_INVALID_CREDENTIAL if current_password
              is wrong.
 */
-sas_status_t sas_auth_change_credential(const char *current_password,
-                                         const char *new_password);
+sas_status_t sas_auth_change_credential(const char *current_password, const char *new_password);

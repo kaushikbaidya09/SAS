@@ -29,11 +29,12 @@
 /* (none yet: TLS cert/key EMBED_TXTFILES symbol names to be added during implementation) */
 
 /* 3. Private typedefs */
-/* (none yet: internal route table entry and httpd_ssl_config_t state to be added during implementation) */
+/* (none yet: internal route table entry and httpd_ssl_config_t state to be added during
+ * implementation) */
 
 /* 4. Private variables */
 static bool s_initialized = false;
-static bool s_started     = false;
+static bool s_started = false;
 
 /* 5. Forward declarations */
 /* default_static_handler() stays esp_err_t: it plugs directly into the
@@ -45,7 +46,8 @@ static esp_err_t default_static_handler(httpd_req_t *req);
 
 sas_status_t sas_http_init(void)
 {
-    if (s_initialized) {
+    if (s_initialized)
+    {
         return SAS_ERR_INVALID_STATE;
     }
 
@@ -61,7 +63,8 @@ sas_status_t sas_http_init(void)
 
 sas_status_t sas_http_start(void)
 {
-    if (!s_initialized) {
+    if (!s_initialized)
+    {
         return SAS_ERR_INVALID_STATE;
     }
 
@@ -85,7 +88,8 @@ sas_status_t sas_http_start(void)
 
 sas_status_t sas_http_stop(void)
 {
-    if (!s_started) {
+    if (!s_started)
+    {
         return SAS_ERR_INVALID_STATE;
     }
 
@@ -98,7 +102,8 @@ sas_status_t sas_http_stop(void)
 
 sas_status_t sas_http_deinit(void)
 {
-    if (!s_initialized) {
+    if (!s_initialized)
+    {
         return SAS_ERR_INVALID_STATE;
     }
 
@@ -112,7 +117,8 @@ sas_status_t sas_http_deinit(void)
 
 sas_status_t sas_http_register_route(const sas_http_route_t *route)
 {
-    if ((route == NULL) || (route->uri == NULL) || (route->handler == NULL)) {
+    if ((route == NULL) || (route->uri == NULL) || (route->handler == NULL))
+    {
         return SAS_ERR_INVALID_ARG;
     }
 
@@ -128,10 +134,10 @@ sas_status_t sas_http_register_route(const sas_http_route_t *route)
     return SAS_ERR_NOT_SUPPORTED;
 }
 
-sas_status_t sas_http_register_ws_handler(const char *uri,
-                                           httpd_uri_t *ws_uri_handler)
+sas_status_t sas_http_register_ws_handler(const char *uri, httpd_uri_t *ws_uri_handler)
 {
-    if ((uri == NULL) || (ws_uri_handler == NULL)) {
+    if ((uri == NULL) || (ws_uri_handler == NULL))
+    {
         return SAS_ERR_INVALID_ARG;
     }
 
@@ -154,7 +160,8 @@ sas_status_t sas_http_register_ws_handler(const char *uri,
 */
 static esp_err_t default_static_handler(httpd_req_t *req)
 {
-    if (req == NULL) {
+    if (req == NULL)
+    {
         return ESP_ERR_INVALID_ARG;
     }
 

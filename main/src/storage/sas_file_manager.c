@@ -17,15 +17,18 @@
 #include <stddef.h>
 
 /* 2. Private macros */
-#define SAS_FS_READY_MARKER_PATH "/.sas_fs_ready" ///< Reserved marker file used to detect first-boot / decide format_if_mount_failed.
-#define SAS_FS_TMP_SUFFIX ".tmp" ///< Temp path suffix used by sas_fs_write() for the write-then-rename replace.
+#define SAS_FS_READY_MARKER_PATH \
+    "/.sas_fs_ready" ///< Reserved marker file used to detect first-boot / decide
+                     ///< format_if_mount_failed.
+#define SAS_FS_TMP_SUFFIX \
+    ".tmp" ///< Temp path suffix used by sas_fs_write() for the write-then-rename replace.
 
 /* 3. Private typedefs */
 /* (none yet: internal path-mutex state to be added during implementation) */
 
 /* 4. Private variables */
 static bool s_initialized = false;
-static bool s_started     = false;
+static bool s_started = false;
 
 /* 5. Forward declarations */
 static sas_status_t check_free_space_margin(size_t additional_bytes);
@@ -49,7 +52,8 @@ sas_status_t sas_fs_init(void)
 
 sas_status_t sas_fs_start(void)
 {
-    if (!s_initialized) {
+    if (!s_initialized)
+    {
         return SAS_ERR_INVALID_STATE;
     }
 
@@ -62,7 +66,8 @@ sas_status_t sas_fs_start(void)
 
 sas_status_t sas_fs_stop(void)
 {
-    if (!s_started) {
+    if (!s_started)
+    {
         return SAS_ERR_INVALID_STATE;
     }
 
@@ -76,7 +81,8 @@ sas_status_t sas_fs_stop(void)
 
 sas_status_t sas_fs_deinit(void)
 {
-    if (!s_initialized) {
+    if (!s_initialized)
+    {
         return SAS_ERR_INVALID_STATE;
     }
 
@@ -89,11 +95,11 @@ sas_status_t sas_fs_deinit(void)
     return SAS_ERR_NOT_SUPPORTED;
 }
 
-sas_status_t sas_fs_list(const char *dir_path,
-                          sas_file_entry_t *out_array,
-                          uint16_t max_entries, uint16_t *out_count)
+sas_status_t sas_fs_list(const char *dir_path, sas_file_entry_t *out_array, uint16_t max_entries,
+                         uint16_t *out_count)
 {
-    if ((dir_path == NULL) || (out_array == NULL) || (out_count == NULL)) {
+    if ((dir_path == NULL) || (out_array == NULL) || (out_count == NULL))
+    {
         return SAS_ERR_INVALID_ARG;
     }
 
@@ -106,10 +112,10 @@ sas_status_t sas_fs_list(const char *dir_path,
     return SAS_ERR_NOT_SUPPORTED;
 }
 
-sas_status_t sas_fs_read(const char *path, uint8_t *out_buf,
-                         size_t buf_len, size_t *out_len)
+sas_status_t sas_fs_read(const char *path, uint8_t *out_buf, size_t buf_len, size_t *out_len)
 {
-    if ((path == NULL) || (out_buf == NULL) || (out_len == NULL)) {
+    if ((path == NULL) || (out_buf == NULL) || (out_len == NULL))
+    {
         return SAS_ERR_INVALID_ARG;
     }
 
@@ -120,10 +126,10 @@ sas_status_t sas_fs_read(const char *path, uint8_t *out_buf,
     return SAS_ERR_NOT_SUPPORTED;
 }
 
-sas_status_t sas_fs_write(const char *path, const uint8_t *data,
-                          size_t len)
+sas_status_t sas_fs_write(const char *path, const uint8_t *data, size_t len)
 {
-    if ((path == NULL) || (data == NULL)) {
+    if ((path == NULL) || (data == NULL))
+    {
         return SAS_ERR_INVALID_ARG;
     }
 
@@ -142,7 +148,8 @@ sas_status_t sas_fs_write(const char *path, const uint8_t *data,
 
 sas_status_t sas_fs_delete(const char *path)
 {
-    if (path == NULL) {
+    if (path == NULL)
+    {
         return SAS_ERR_INVALID_ARG;
     }
 
@@ -155,7 +162,8 @@ sas_status_t sas_fs_delete(const char *path)
 
 sas_status_t sas_fs_rename(const char *old_path, const char *new_path)
 {
-    if ((old_path == NULL) || (new_path == NULL)) {
+    if ((old_path == NULL) || (new_path == NULL))
+    {
         return SAS_ERR_INVALID_ARG;
     }
 
@@ -169,7 +177,8 @@ sas_status_t sas_fs_rename(const char *old_path, const char *new_path)
 
 sas_status_t sas_fs_get_usage(sas_fs_usage_t *out)
 {
-    if (out == NULL) {
+    if (out == NULL)
+    {
         return SAS_ERR_INVALID_ARG;
     }
 

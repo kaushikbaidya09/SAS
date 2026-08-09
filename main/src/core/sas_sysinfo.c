@@ -24,9 +24,10 @@
 /* (none yet: no internal state beyond the boot timestamp below) */
 
 /* 4. Private variables */
-static bool    s_initialized  = false;
-static bool    s_started      = false;
-static int64_t s_boot_time_us = 0; ///< Boot timestamp recorded by sas_sysinfo_init(), used to derive uptime_seconds (no other state retained).
+static bool s_initialized = false;
+static bool s_started = false;
+static int64_t s_boot_time_us = 0; ///< Boot timestamp recorded by sas_sysinfo_init(), used to
+                                   ///< derive uptime_seconds (no other state retained).
 
 /* 5. Forward declarations */
 /* (none: no private helper functions yet) */
@@ -45,7 +46,8 @@ sas_status_t sas_sysinfo_init(void)
 
 sas_status_t sas_sysinfo_start(void)
 {
-    if (!s_initialized) {
+    if (!s_initialized)
+    {
         return SAS_ERR_INVALID_STATE;
     }
 
@@ -58,7 +60,8 @@ sas_status_t sas_sysinfo_start(void)
 
 sas_status_t sas_sysinfo_stop(void)
 {
-    if (!s_started) {
+    if (!s_started)
+    {
         return SAS_ERR_INVALID_STATE;
     }
 
@@ -70,7 +73,8 @@ sas_status_t sas_sysinfo_stop(void)
 
 sas_status_t sas_sysinfo_deinit(void)
 {
-    if (!s_initialized) {
+    if (!s_initialized)
+    {
         return SAS_ERR_INVALID_STATE;
     }
 
@@ -83,7 +87,8 @@ sas_status_t sas_sysinfo_deinit(void)
 
 sas_status_t sas_sysinfo_get_chip_info(sas_chip_info_t *out)
 {
-    if (out == NULL) {
+    if (out == NULL)
+    {
         return SAS_ERR_INVALID_ARG;
     }
 
@@ -97,7 +102,8 @@ sas_status_t sas_sysinfo_get_chip_info(sas_chip_info_t *out)
 
 sas_status_t sas_sysinfo_get_runtime_info(sas_runtime_info_t *out)
 {
-    if (out == NULL) {
+    if (out == NULL)
+    {
         return SAS_ERR_INVALID_ARG;
     }
 
@@ -111,7 +117,8 @@ sas_status_t sas_sysinfo_get_runtime_info(sas_runtime_info_t *out)
 
 sas_status_t sas_sysinfo_get_reset_reason(esp_reset_reason_t *out)
 {
-    if (out == NULL) {
+    if (out == NULL)
+    {
         return SAS_ERR_INVALID_ARG;
     }
 
@@ -122,11 +129,11 @@ sas_status_t sas_sysinfo_get_reset_reason(esp_reset_reason_t *out)
     return SAS_ERR_NOT_SUPPORTED;
 }
 
-sas_status_t sas_sysinfo_get_task_snapshot(sas_task_snapshot_t *out_array,
-                                            uint8_t max_entries,
-                                            uint8_t *out_count)
+sas_status_t sas_sysinfo_get_task_snapshot(sas_task_snapshot_t *out_array, uint8_t max_entries,
+                                           uint8_t *out_count)
 {
-    if ((out_array == NULL) || (out_count == NULL)) {
+    if ((out_array == NULL) || (out_count == NULL))
+    {
         return SAS_ERR_INVALID_ARG;
     }
 

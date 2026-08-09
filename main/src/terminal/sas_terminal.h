@@ -38,9 +38,16 @@
  * requires the macros to be defined first. */
 
 #define SAS_TERM_ERR_BASE (0x8C00U) ///< Custom status base for this module.
-#define SAS_TERM_ERR_CMD_NOT_FOUND (SAS_TERM_ERR_BASE + 1U) ///< sas_terminal_execute() failed: argv[0] did not match any registered command; nothing was executed.
-#define SAS_TERM_ERR_UNAUTHORIZED (SAS_TERM_ERR_BASE + 2U) ///< sas_terminal_execute() failed: the client's session token did not pass Authentication module validation.
-#define SAS_TERM_ERR_OUTPUT_TRUNCATED (SAS_TERM_ERR_BASE + 3U) ///< Command output reached SAS_TERM_MAX_OUTPUT_LEN before completing; remaining output was discarded and the truncation was reported to the client instead of being silently dropped.
+#define SAS_TERM_ERR_CMD_NOT_FOUND \
+    (SAS_TERM_ERR_BASE + 1U) ///< sas_terminal_execute() failed: argv[0] did not match any
+                             ///< registered command; nothing was executed.
+#define SAS_TERM_ERR_UNAUTHORIZED \
+    (SAS_TERM_ERR_BASE + 2U) ///< sas_terminal_execute() failed: the client's session token did not
+                             ///< pass Authentication module validation.
+#define SAS_TERM_ERR_OUTPUT_TRUNCATED \
+    (SAS_TERM_ERR_BASE + 3U) ///< Command output reached SAS_TERM_MAX_OUTPUT_LEN before completing;
+                             ///< remaining output was discarded and the truncation was reported to
+                             ///< the client instead of being silently dropped.
 
 /*!
     Placeholder maximum command name length in bytes, including the NUL
@@ -75,22 +82,23 @@
     \return  SAS_STATUS_OK on success; any other sas_status_t is reported
              to client.
 */
-typedef sas_status_t (*sas_terminal_cmd_fn)(int argc, char **argv,
-                                             sas_ws_client_t *client);
+typedef sas_status_t (*sas_terminal_cmd_fn)(int argc, char **argv, sas_ws_client_t *client);
 
 /*! A single command registered in the static command table. */
-typedef struct {
-    char                name[SAS_TERM_MAX_CMD_NAME_LEN]; ///< Name matched against argv[0].
-    sas_terminal_cmd_fn handler;                          ///< Handler invoked on a match.
+typedef struct
+{
+    char name[SAS_TERM_MAX_CMD_NAME_LEN]; ///< Name matched against argv[0].
+    sas_terminal_cmd_fn handler;          ///< Handler invoked on a match.
 } sas_terminal_command_t;
 
 /*!
     Per-client terminal session, isolating output buffering per client.
 */
-typedef struct {
-    sas_ws_client_t client;                              ///< Owning WebSocket client.
-    char            output_buf[SAS_TERM_MAX_OUTPUT_LEN]; ///< Output pending flush to client.
-    size_t          output_len;                          ///< Bytes currently held in output_buf.
+typedef struct
+{
+    sas_ws_client_t client;                   ///< Owning WebSocket client.
+    char output_buf[SAS_TERM_MAX_OUTPUT_LEN]; ///< Output pending flush to client.
+    size_t output_len;                        ///< Bytes currently held in output_buf.
 } sas_terminal_session_t;
 
 /* 6. Public API declarations */
@@ -144,5 +152,4 @@ sas_status_t sas_terminal_register_command(const sas_terminal_command_t *cmd);
              command output reached SAS_TERM_MAX_OUTPUT_LEN before
              completing (the truncation is also reported to client).
 */
-sas_status_t sas_terminal_execute(sas_ws_client_t *client,
-                                   const char *command_line);
+sas_status_t sas_terminal_execute(sas_ws_client_t *client, const char *command_line);

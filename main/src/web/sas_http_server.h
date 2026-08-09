@@ -37,21 +37,22 @@
 typedef esp_err_t (*sas_http_handler_fn)(httpd_req_t *req);
 
 /*! A single route registered with the HTTP Server module. */
-typedef struct {
-    const char          *uri;           ///< Route path, e.g. "/api/status".
-    httpd_method_t       method;        ///< HTTP method this route matches.
-    sas_http_handler_fn  handler;       ///< Handler invoked on a match.
-    bool                 requires_auth; ///< True to require a valid auth token before dispatch.
+typedef struct
+{
+    const char *uri;             ///< Route path, e.g. "/api/status".
+    httpd_method_t method;       ///< HTTP method this route matches.
+    sas_http_handler_fn handler; ///< Handler invoked on a match.
+    bool requires_auth;          ///< True to require a valid auth token before dispatch.
 } sas_http_route_t;
 
 /* 5. Public constants */
 
 /*! Custom sas_status_t base for this module. */
-#define SAS_HTTP_ERR_BASE                  (0x8700U)
+#define SAS_HTTP_ERR_BASE (0x8700U)
 /*! register_route() called with a (uri, method) pair that is already registered. */
-#define SAS_HTTP_ERR_ROUTE_CONFLICT        (SAS_HTTP_ERR_BASE + 1U)
+#define SAS_HTTP_ERR_ROUTE_CONFLICT (SAS_HTTP_ERR_BASE + 1U)
 /*! A client TLS handshake failed; the affected connection is closed, others are unaffected. */
-#define SAS_HTTP_ERR_TLS_HANDSHAKE_FAILED  (SAS_HTTP_ERR_BASE + 2U)
+#define SAS_HTTP_ERR_TLS_HANDSHAKE_FAILED (SAS_HTTP_ERR_BASE + 2U)
 
 /* 6. Public API declarations */
 
@@ -101,5 +102,4 @@ sas_status_t sas_http_register_route(const sas_http_route_t *route);
              ws_uri_handler is NULL; SAS_HTTP_ERR_ROUTE_CONFLICT if uri is
              already registered.
 */
-sas_status_t sas_http_register_ws_handler(const char *uri,
-                                           httpd_uri_t *ws_uri_handler);
+sas_status_t sas_http_register_ws_handler(const char *uri, httpd_uri_t *ws_uri_handler);

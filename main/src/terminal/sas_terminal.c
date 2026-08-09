@@ -30,7 +30,7 @@
 
 /* 4. Private variables */
 static bool s_initialized = false;
-static bool s_started     = false;
+static bool s_started = false;
 
 /* 5. Forward declarations */
 static sas_status_t dispatch_command(sas_ws_client_t *client, const char *command_line);
@@ -51,7 +51,8 @@ sas_status_t sas_terminal_init(void)
 
 sas_status_t sas_terminal_start(void)
 {
-    if (!s_initialized) {
+    if (!s_initialized)
+    {
         return SAS_ERR_INVALID_STATE;
     }
 
@@ -65,7 +66,8 @@ sas_status_t sas_terminal_start(void)
 
 sas_status_t sas_terminal_stop(void)
 {
-    if (!s_started) {
+    if (!s_started)
+    {
         return SAS_ERR_INVALID_STATE;
     }
 
@@ -80,7 +82,8 @@ sas_status_t sas_terminal_stop(void)
 
 sas_status_t sas_terminal_deinit(void)
 {
-    if (!s_initialized) {
+    if (!s_initialized)
+    {
         return SAS_ERR_INVALID_STATE;
     }
 
@@ -94,7 +97,8 @@ sas_status_t sas_terminal_deinit(void)
 
 sas_status_t sas_terminal_register_command(const sas_terminal_command_t *cmd)
 {
-    if ((cmd == NULL) || (cmd->handler == NULL)) {
+    if ((cmd == NULL) || (cmd->handler == NULL))
+    {
         return SAS_ERR_INVALID_ARG;
     }
 
@@ -108,7 +112,8 @@ sas_status_t sas_terminal_register_command(const sas_terminal_command_t *cmd)
 
 sas_status_t sas_terminal_execute(sas_ws_client_t *client, const char *command_line)
 {
-    if ((client == NULL) || (command_line == NULL)) {
+    if ((client == NULL) || (command_line == NULL))
+    {
         return SAS_ERR_INVALID_ARG;
     }
 

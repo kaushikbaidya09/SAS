@@ -54,7 +54,8 @@
     Each state transition above publishes SAS_EVENT_OTA_PROGRESS with
     percent complete and state.
 */
-typedef enum {
+typedef enum
+{
     SAS_OTA_STATE_IDLE = 0,
     SAS_OTA_STATE_RECEIVING,
     SAS_OTA_STATE_VERIFYING,
@@ -63,16 +64,22 @@ typedef enum {
 } sas_ota_state_t;
 
 /*! Update progress snapshot published with SAS_EVENT_OTA_PROGRESS. */
-typedef struct {
-    uint8_t         percent_complete; ///< 0-100 completion of the current state.
-    sas_ota_state_t state;            ///< State this snapshot was published from.
+typedef struct
+{
+    uint8_t percent_complete; ///< 0-100 completion of the current state.
+    sas_ota_state_t state;    ///< State this snapshot was published from.
 } sas_ota_progress_t;
 
 /* 5. Public constants */
 
 #define SAS_OTA_ERR_BASE (0x8B00U) ///< Custom status base for this module.
-#define SAS_OTA_ERR_IMAGE_TOO_LARGE (SAS_OTA_ERR_BASE + 1U) ///< begin_from_upload()/begin_from_url() rejected: image exceeds the inactive partition size; no flash write to the inactive partition was started.
-#define SAS_OTA_ERR_VERIFY_FAILED (SAS_OTA_ERR_BASE + 2U) ///< finish() failed: checksum/signature verification failed; state moved to FAILED and the current boot partition is untouched.
+#define SAS_OTA_ERR_IMAGE_TOO_LARGE \
+    (SAS_OTA_ERR_BASE +             \
+     1U) ///< begin_from_upload()/begin_from_url() rejected: image exceeds the inactive partition
+         ///< size; no flash write to the inactive partition was started.
+#define SAS_OTA_ERR_VERIFY_FAILED \
+    (SAS_OTA_ERR_BASE + 2U) ///< finish() failed: checksum/signature verification failed; state
+                            ///< moved to FAILED and the current boot partition is untouched.
 
 /* 6. Public API declarations */
 

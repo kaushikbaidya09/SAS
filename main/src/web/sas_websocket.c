@@ -34,7 +34,7 @@
 
 /* 4. Private variables */
 static bool s_initialized = false;
-static bool s_started     = false;
+static bool s_started = false;
 
 /* 5. Forward declarations */
 /* (none yet: no private helpers required until implementation begins) */
@@ -43,7 +43,8 @@ static bool s_started     = false;
 
 sas_status_t sas_ws_init(void)
 {
-    if (s_initialized) {
+    if (s_initialized)
+    {
         return SAS_ERR_INVALID_STATE;
     }
 
@@ -60,7 +61,8 @@ sas_status_t sas_ws_init(void)
 
 sas_status_t sas_ws_start(void)
 {
-    if (!s_initialized) {
+    if (!s_initialized)
+    {
         return SAS_ERR_INVALID_STATE;
     }
 
@@ -80,7 +82,8 @@ sas_status_t sas_ws_start(void)
 
 sas_status_t sas_ws_stop(void)
 {
-    if (!s_started) {
+    if (!s_started)
+    {
         return SAS_ERR_INVALID_STATE;
     }
 
@@ -95,7 +98,8 @@ sas_status_t sas_ws_stop(void)
 
 sas_status_t sas_ws_deinit(void)
 {
-    if (!s_initialized) {
+    if (!s_initialized)
+    {
         return SAS_ERR_INVALID_STATE;
     }
 
@@ -109,7 +113,8 @@ sas_status_t sas_ws_deinit(void)
 
 sas_status_t sas_ws_broadcast(sas_ws_msg_type_t type, cJSON *payload)
 {
-    if (payload == NULL) {
+    if (payload == NULL)
+    {
         return SAS_ERR_INVALID_ARG;
     }
 
@@ -125,11 +130,11 @@ sas_status_t sas_ws_broadcast(sas_ws_msg_type_t type, cJSON *payload)
     return SAS_ERR_NOT_SUPPORTED;
 }
 
-sas_status_t sas_ws_send_to_client(const sas_ws_client_t *client,
-                                   sas_ws_msg_type_t type,
+sas_status_t sas_ws_send_to_client(const sas_ws_client_t *client, sas_ws_msg_type_t type,
                                    cJSON *payload)
 {
-    if ((client == NULL) || (payload == NULL)) {
+    if ((client == NULL) || (payload == NULL))
+    {
         return SAS_ERR_INVALID_ARG;
     }
 

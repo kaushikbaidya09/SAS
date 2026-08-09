@@ -2,14 +2,11 @@
     \file    sas_event_bus.h
     \brief   Public interface for the Event Bus module.
 
-    \description
-    Synchronous, in-process publish/subscribe event dispatcher. This module
-    owns the single project-wide registry of well-known SAS_EVENT_* IDs and
-    the subscribe/unsubscribe/publish API used by every other module to
-    decouple event producers from event consumers.
-
-    \dependencies
-    (none: Event Bus is a Layer-1 module with no compile-time header deps)
+    \details
+    Synchronous, in-process publish/subscribe event dispatcher. Owns the
+    project-wide registry of SAS_EVENT_* IDs and the
+    subscribe/unsubscribe/publish API every module uses to decouple event
+    producers from consumers.
 */
 
 #pragma once
@@ -27,10 +24,11 @@
 /* 4. Public types */
 
 /*! A single published event: an ID plus an optional, caller-owned payload. */
-typedef struct {
-    uint32_t    event_id;    ///< One of the SAS_EVENT_* IDs below.
-    const void *payload;     ///< Optional payload; may be NULL.
-    size_t      payload_len; ///< Payload length in bytes; 0 if payload is NULL.
+typedef struct
+{
+    uint32_t event_id;   ///< One of the SAS_EVENT_* IDs below.
+    const void *payload; ///< Optional payload; may be NULL.
+    size_t payload_len;  ///< Payload length in bytes; 0 if payload is NULL.
 } sas_event_t;
 
 /*!
@@ -42,17 +40,22 @@ typedef struct {
 typedef void (*sas_event_callback_fn)(const sas_event_t *event, void *user_ctx);
 
 /*! One entry in the internal subscription table. */
-typedef struct {
-    uint32_t              event_id; ///< Event ID this subscription is for.
+typedef struct
+{
+    uint32_t event_id;              ///< Event ID this subscription is for.
     sas_event_callback_fn callback; ///< Non-NULL callback to invoke.
-    void                 *user_ctx; ///< Opaque context passed back to callback.
+    void *user_ctx;                 ///< Opaque context passed back to callback.
 } sas_event_subscription_t;
 
 /* 5. Public constants */
 
 #define SAS_EVT_ERR_BASE (0x8400U) ///< Custom sas_status_t base for this module.
-#define SAS_EVT_ERR_TABLE_FULL (SAS_EVT_ERR_BASE + 1U) ///< subscribe() failed: SAS_EVT_MAX_SUBSCRIPTIONS entries already in use.
-#define SAS_EVT_ERR_PAYLOAD_TOO_LARGE (SAS_EVT_ERR_BASE + 2U) ///< publish() failed: payload_len exceeds SAS_EVT_MAX_PAYLOAD_LEN; event was not dispatched.
+#define SAS_EVT_ERR_TABLE_FULL \
+    (SAS_EVT_ERR_BASE +        \
+     1U) ///< subscribe() failed: SAS_EVT_MAX_SUBSCRIPTIONS entries already in use.
+#define SAS_EVT_ERR_PAYLOAD_TOO_LARGE \
+    (SAS_EVT_ERR_BASE + 2U) ///< publish() failed: payload_len exceeds SAS_EVT_MAX_PAYLOAD_LEN;
+                            ///< event was not dispatched.
 
 /*! Maximum concurrent subscriptions across all event IDs.
     Placeholder sizing honoring the ">= 32" floor; to be tuned during
@@ -69,7 +72,8 @@ typedef struct {
     owning module appends its own SAS_EVENT_* constants here as it is
     implemented.
 */
-typedef enum {
+typedef enum
+{
     /* Configuration Manager */
     SAS_EVENT_CONFIG_CHANGED = 1,
 
@@ -90,13 +94,15 @@ typedef enum {
 
 /*!
     \brief   Initialize the Event Bus module.
-    \return  SAS_STATUS_OK on success.
+    \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_STATE if already
+             initialized.
 */
 sas_status_t sas_event_bus_init(void);
 
 /*!
     \brief   Start active event dispatch operation.
-    \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_STATE if not initialized.
+    \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_STATE if not
+             initialized or already started.
 */
 sas_status_t sas_event_bus_start(void);
 
@@ -108,7 +114,8 @@ sas_status_t sas_event_bus_stop(void);
 
 /*!
     \brief   Release all resources acquired by sas_event_bus_init().
-    \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_STATE if not initialized.
+    \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_STATE if not
+             initialized or still started (call sas_event_bus_stop() first).
 */
 sas_status_t sas_event_bus_deinit(void);
 
@@ -119,31 +126,33 @@ sas_status_t sas_event_bus_deinit(void);
     \param   user_ctx                 Opaque context passed back to cb; may be NULL.
     \param   out_subscription_handle  Non-NULL; receives a handle usable with
                                        sas_event_bus_unsubscribe().
-    \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_ARG if cb or
-             out_subscription_handle is NULL; SAS_EVT_ERR_TABLE_FULL if
-             SAS_EVT_MAX_SUBSCRIPTIONS is already in use.
+    \return  SAS_STATUS_OK; SAS_ERR_INVALID_ARG (cb or handle is NULL);
+             SAS_EVT_ERR_TABLE_FULL (table full); SAS_ERR_TIMEOUT (lock busy).
 */
-sas_status_t sas_event_bus_subscribe(uint32_t event_id,
-                                      sas_event_callback_fn cb,
-                                      void *user_ctx,
-                                      uint32_t *out_subscription_handle);
+sas_status_t sas_event_bus_subscribe(uint32_t event_id, sas_event_callback_fn cb, void *user_ctx,
+                                     uint32_t *out_subscription_handle);
 
 /*!
-    \brief   Remove a previously registered subscription.
+    \brief   Remove a previously registered subscription. Safe to call
+             from within that subscription's own callback during dispatch.
     \param   subscription_handle Handle returned by sas_event_bus_subscribe().
-    \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_ARG if the handle is unknown.
+    \return  SAS_STATUS_OK; SAS_ERR_INVALID_ARG (unknown or already-removed
+             handle); SAS_ERR_TIMEOUT (lock busy).
 */
 sas_status_t sas_event_bus_unsubscribe(uint32_t subscription_handle);
 
 /*!
-    \brief   Publish an event synchronously to all current subscribers of
-             event_id.
+    \brief   Publish an event synchronously to every callback currently
+             subscribed to event_id.
+    \note    A subscriber may safely subscribe/unsubscribe/publish again
+             from within its own callback without deadlocking; the change
+             only affects later publish() calls, not this one.
     \param   event_id    Event ID to publish.
     \param   payload     Optional payload to copy to subscribers; may be NULL.
     \param   payload_len Payload length in bytes; must be 0 if payload is NULL.
-    \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_ARG if payload is NULL
-             and payload_len is nonzero; SAS_EVT_ERR_PAYLOAD_TOO_LARGE if
-             payload_len exceeds SAS_EVT_MAX_PAYLOAD_LEN (event not dispatched).
+    \return  SAS_STATUS_OK; SAS_ERR_INVALID_ARG (payload NULL, len
+             nonzero); SAS_EVT_ERR_PAYLOAD_TOO_LARGE (exceeds
+             SAS_EVT_MAX_PAYLOAD_LEN, not dispatched); SAS_ERR_TIMEOUT
+             (dispatch lock busy, not dispatched).
 */
-sas_status_t sas_event_bus_publish(uint32_t event_id, const void *payload,
-                                    size_t payload_len);
+sas_status_t sas_event_bus_publish(uint32_t event_id, const void *payload, size_t payload_len);

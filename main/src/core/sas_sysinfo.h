@@ -28,30 +28,35 @@
 /* 4. Public types */
 
 /*! Static chip identity, sampled from esp_chip_info(). */
-typedef struct {
-    char     chip_model[16];   ///< Human-readable chip model string.
-    uint8_t  chip_revision;    ///< Silicon revision number.
+typedef struct
+{
+    char chip_model[16];       ///< Human-readable chip model string.
+    uint8_t chip_revision;     ///< Silicon revision number.
     uint32_t flash_size_bytes; ///< Detected flash size, in bytes.
 } sas_chip_info_t;
 
 /*! Runtime memory/uptime snapshot. */
-typedef struct {
+typedef struct
+{
     uint32_t free_heap_bytes;     ///< Current free heap, in bytes.
     uint32_t min_free_heap_bytes; ///< Minimum free heap ever observed, in bytes.
     uint64_t uptime_seconds;      ///< Seconds elapsed since module init.
 } sas_runtime_info_t;
 
 /*! Single task's state, as reported by uxTaskGetSystemState(). */
-typedef struct {
-    char     task_name[configMAX_TASK_NAME_LEN]; ///< Task name (NUL-terminated).
-    uint8_t  state;                              ///< eTaskState value of the task.
-    uint32_t stack_high_water_mark;              ///< Minimum remaining stack, in words.
+typedef struct
+{
+    char task_name[configMAX_TASK_NAME_LEN]; ///< Task name (NUL-terminated).
+    uint8_t state;                           ///< eTaskState value of the task.
+    uint32_t stack_high_water_mark;          ///< Minimum remaining stack, in words.
 } sas_task_snapshot_t;
 
 /* 5. Public constants */
 
-#define SAS_SYSINFO_ERR_BASE             (0x8300U) ///< Custom status base for this module.
-#define SAS_SYSINFO_ERR_BUFFER_TOO_SMALL (SAS_SYSINFO_ERR_BASE + 1U) ///< out_array smaller than the active task count; out_count set to the required size.
+#define SAS_SYSINFO_ERR_BASE (0x8300U) ///< Custom status base for this module.
+#define SAS_SYSINFO_ERR_BUFFER_TOO_SMALL \
+    (SAS_SYSINFO_ERR_BASE +              \
+     1U) ///< out_array smaller than the active task count; out_count set to the required size.
 
 /* 6. Public API declarations */
 
@@ -112,9 +117,8 @@ sas_status_t sas_sysinfo_get_reset_reason(esp_reset_reason_t *out);
              out_count is NULL; SAS_SYSINFO_ERR_BUFFER_TOO_SMALL if
              max_entries is smaller than the active task count.
 */
-sas_status_t sas_sysinfo_get_task_snapshot(sas_task_snapshot_t *out_array,
-                                            uint8_t max_entries,
-                                            uint8_t *out_count);
+sas_status_t sas_sysinfo_get_task_snapshot(sas_task_snapshot_t *out_array, uint8_t max_entries,
+                                           uint8_t *out_count);
 
 /*
  * TODO: sas_sysinfo_get_boot_status() — a Boot Sequencing extension to this

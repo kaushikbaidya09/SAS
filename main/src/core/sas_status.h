@@ -46,12 +46,12 @@ typedef uint32_t sas_status_t;
 
 /* 5. Public constants */
 
-#define SAS_STATUS_OK         (0U)  ///< Success.
-#define SAS_ERR_INVALID_ARG   (1U)  ///< A public-API argument failed validation at the boundary.
-#define SAS_ERR_INVALID_STATE (2U)  ///< Call is not valid in the module's current lifecycle state.
-#define SAS_ERR_NOT_SUPPORTED (3U)  ///< Not yet implemented (pre-implementation skeleton stub).
-#define SAS_ERR_NO_MEM        (4U)  ///< A fixed-size static pool/table is exhausted.
-#define SAS_ERR_TIMEOUT       (5U)  ///< Operation did not complete within its bounded time budget.
+#define SAS_STATUS_OK (0U)         ///< Success.
+#define SAS_ERR_INVALID_ARG (1U)   ///< A public-API argument failed validation at the boundary.
+#define SAS_ERR_INVALID_STATE (2U) ///< Call is not valid in the module's current lifecycle state.
+#define SAS_ERR_NOT_SUPPORTED (3U) ///< Not yet implemented (pre-implementation skeleton stub).
+#define SAS_ERR_NO_MEM (4U)        ///< A fixed-size static pool/table is exhausted.
+#define SAS_ERR_TIMEOUT (5U)       ///< Operation did not complete within its bounded time budget.
 
 /* 6. Public API declarations */
 /* (none: this header declares only the common type and constants above) */

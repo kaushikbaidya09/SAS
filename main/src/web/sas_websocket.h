@@ -32,7 +32,8 @@
 /* 4. Public types */
 
 /*! Broadcastable message categories carried in the JSON envelope's "type" field. */
-typedef enum {
+typedef enum
+{
     SAS_WS_MSG_SYSINFO = 0,
     SAS_WS_MSG_WIFI_STATE,
     SAS_WS_MSG_OTA_PROGRESS,
@@ -42,14 +43,17 @@ typedef enum {
 } sas_ws_msg_type_t;
 
 /*! Handle identifying a single connected WebSocket client. */
-typedef struct {
+typedef struct
+{
     int fd; ///< Underlying socket descriptor, as reported by the HTTP Server.
 } sas_ws_client_t;
 
 /* 5. Public constants */
 
 #define SAS_WS_ERR_BASE (0x8900U) ///< Custom status base for this module.
-#define SAS_WS_ERR_CLIENT_TABLE_FULL (SAS_WS_ERR_BASE + 1U) ///< Connect attempt rejected: SAS_WS_MAX_CLIENTS connections already tracked.
+#define SAS_WS_ERR_CLIENT_TABLE_FULL \
+    (SAS_WS_ERR_BASE +               \
+     1U) ///< Connect attempt rejected: SAS_WS_MAX_CLIENTS connections already tracked.
 
 /*!
     Maximum concurrent WebSocket clients tracked by this module.
@@ -113,6 +117,5 @@ sas_status_t sas_ws_broadcast(sas_ws_msg_type_t type, cJSON *payload);
     \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_ARG if client or
              payload is NULL; SAS_ERR_INVALID_STATE if not started.
 */
-sas_status_t sas_ws_send_to_client(const sas_ws_client_t *client,
-                                   sas_ws_msg_type_t type,
+sas_status_t sas_ws_send_to_client(const sas_ws_client_t *client, sas_ws_msg_type_t type,
                                    cJSON *payload);

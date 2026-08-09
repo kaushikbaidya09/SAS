@@ -31,21 +31,24 @@
 #include <stdint.h>
 
 /* 2. Private macros */
-#define SAS_BOOT_MODULE_COUNT (13U) ///< Modules with a lifecycle in the boot sequence (Dashboard has none).
+#define SAS_BOOT_MODULE_COUNT \
+    (13U) ///< Modules with a lifecycle in the boot sequence (Dashboard has none).
 
 /* 3. Private typedefs */
 
 /*! Per-module boot outcome; extends System Information. */
-typedef enum {
+typedef enum
+{
     SAS_BOOT_STATUS_OK = 0,
     SAS_BOOT_STATUS_FAILED,
     SAS_BOOT_STATUS_SKIPPED_DEPENDENCY,
 } sas_boot_status_t;
 
 /*! One boot-sequence record. */
-typedef struct {
-    const char       *module_name; ///< Module name, e.g. "logger".
-    sas_boot_status_t status;      ///< Outcome recorded for this module.
+typedef struct
+{
+    const char *module_name;  ///< Module name, e.g. "logger".
+    sas_boot_status_t status; ///< Outcome recorded for this module.
 } sas_boot_record_t;
 
 /* 4. Private variables */
@@ -84,7 +87,8 @@ void app_main(void)
             .log_file_path = "/logs/sas.log",
         };
         status = sas_logger_init(&log_cfg);
-        if (status == SAS_STATUS_OK) {
+        if (status == SAS_STATUS_OK)
+        {
             status = sas_logger_start();
         }
         record_boot_status(idx++, "logger", status);
@@ -92,56 +96,64 @@ void app_main(void)
 
     /* 2. Configuration Manager */
     status = sas_config_init();
-    if (status == SAS_STATUS_OK) {
+    if (status == SAS_STATUS_OK)
+    {
         status = sas_config_start();
     }
     record_boot_status(idx++, "config", status);
 
     /* 3. System Information */
     status = sas_sysinfo_init();
-    if (status == SAS_STATUS_OK) {
+    if (status == SAS_STATUS_OK)
+    {
         status = sas_sysinfo_start();
     }
     record_boot_status(idx++, "sysinfo", status);
 
     /* 4. Event Bus */
     status = sas_event_bus_init();
-    if (status == SAS_STATUS_OK) {
+    if (status == SAS_STATUS_OK)
+    {
         status = sas_event_bus_start();
     }
     record_boot_status(idx++, "event_bus", status);
 
     /* 5. File Manager */
     status = sas_fs_init();
-    if (status == SAS_STATUS_OK) {
+    if (status == SAS_STATUS_OK)
+    {
         status = sas_fs_start();
     }
     record_boot_status(idx++, "file_manager", status);
 
     /* 6. Wi-Fi Manager */
     status = sas_wifi_init();
-    if (status == SAS_STATUS_OK) {
+    if (status == SAS_STATUS_OK)
+    {
         status = sas_wifi_start();
     }
     record_boot_status(idx++, "wifi_manager", status);
 
     /* 7. HTTP Server */
     status = sas_http_init();
-    if (status == SAS_STATUS_OK) {
+    if (status == SAS_STATUS_OK)
+    {
         status = sas_http_start();
     }
     record_boot_status(idx++, "http_server", status);
 
     /* 8. REST API */
     status = sas_rest_api_init();
-    if (status == SAS_STATUS_OK) {
+    if (status == SAS_STATUS_OK)
+    {
         status = sas_rest_api_start();
     }
     record_boot_status(idx++, "rest_api", status);
 
     /* 9. WebSocket */
     status = sas_ws_init();
-    if (status == SAS_STATUS_OK) {
+    if (status == SAS_STATUS_OK)
+    {
         status = sas_ws_start();
     }
     record_boot_status(idx++, "websocket", status);
@@ -150,28 +162,32 @@ void app_main(void)
 
     /* 11. BLE Scanner */
     status = sas_ble_init();
-    if (status == SAS_STATUS_OK) {
+    if (status == SAS_STATUS_OK)
+    {
         status = sas_ble_start();
     }
     record_boot_status(idx++, "ble_scanner", status);
 
     /* 12. OTA Manager */
     status = sas_ota_init();
-    if (status == SAS_STATUS_OK) {
+    if (status == SAS_STATUS_OK)
+    {
         status = sas_ota_start();
     }
     record_boot_status(idx++, "ota_manager", status);
 
     /* 13. Terminal */
     status = sas_terminal_init();
-    if (status == SAS_STATUS_OK) {
+    if (status == SAS_STATUS_OK)
+    {
         status = sas_terminal_start();
     }
     record_boot_status(idx++, "terminal", status);
 
     /* 14. Authentication */
     status = sas_auth_init();
-    if (status == SAS_STATUS_OK) {
+    if (status == SAS_STATUS_OK)
+    {
         status = sas_auth_start();
     }
     record_boot_status(idx++, "auth", status);
@@ -184,10 +200,12 @@ void app_main(void)
 */
 static void record_boot_status(uint8_t index, const char *name, sas_status_t status)
 {
-    if (index >= SAS_BOOT_MODULE_COUNT) {
+    if (index >= SAS_BOOT_MODULE_COUNT)
+    {
         return;
     }
 
     s_boot_status[index].module_name = name;
-    s_boot_status[index].status = (status == SAS_STATUS_OK) ? SAS_BOOT_STATUS_OK : SAS_BOOT_STATUS_FAILED;
+    s_boot_status[index].status =
+        (status == SAS_STATUS_OK) ? SAS_BOOT_STATUS_OK : SAS_BOOT_STATUS_FAILED;
 }

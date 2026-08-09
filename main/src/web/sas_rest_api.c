@@ -33,7 +33,7 @@
 
 /* 4. Private variables */
 static bool s_initialized = false;
-static bool s_started     = false;
+static bool s_started = false;
 
 /* 5. Forward declarations */
 /* (none yet: shared request-body reader and per-endpoint schema-check
@@ -43,7 +43,8 @@ static bool s_started     = false;
 
 sas_status_t sas_rest_api_init(void)
 {
-    if (s_initialized) {
+    if (s_initialized)
+    {
         return SAS_ERR_INVALID_STATE;
     }
 
@@ -57,7 +58,8 @@ sas_status_t sas_rest_api_init(void)
 
 sas_status_t sas_rest_api_start(void)
 {
-    if (!s_initialized) {
+    if (!s_initialized)
+    {
         return SAS_ERR_INVALID_STATE;
     }
 
@@ -76,7 +78,8 @@ sas_status_t sas_rest_api_start(void)
 
 sas_status_t sas_rest_api_stop(void)
 {
-    if (!s_started) {
+    if (!s_started)
+    {
         return SAS_ERR_INVALID_STATE;
     }
 
@@ -90,7 +93,8 @@ sas_status_t sas_rest_api_stop(void)
 
 sas_status_t sas_rest_api_deinit(void)
 {
-    if (!s_initialized) {
+    if (!s_initialized)
+    {
         return SAS_ERR_INVALID_STATE;
     }
 
@@ -101,11 +105,10 @@ sas_status_t sas_rest_api_deinit(void)
     return SAS_ERR_NOT_SUPPORTED;
 }
 
-sas_status_t sas_rest_api_send_error(httpd_req_t *req,
-                                     const sas_api_error_t *err)
+sas_status_t sas_rest_api_send_error(httpd_req_t *req, const sas_api_error_t *err)
 {
-    if ((req == NULL) || (err == NULL) || (err->error_code == NULL) ||
-        (err->message == NULL)) {
+    if ((req == NULL) || (err == NULL) || (err->error_code == NULL) || (err->message == NULL))
+    {
         return SAS_ERR_INVALID_ARG;
     }
 
@@ -120,7 +123,8 @@ sas_status_t sas_rest_api_send_error(httpd_req_t *req,
 
 sas_status_t sas_rest_api_send_json(httpd_req_t *req, cJSON *body)
 {
-    if ((req == NULL) || (body == NULL)) {
+    if ((req == NULL) || (body == NULL))
+    {
         return SAS_ERR_INVALID_ARG;
     }
 

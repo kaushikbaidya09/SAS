@@ -43,7 +43,7 @@
 
 /* 4. Private variables */
 static bool s_initialized = false;
-static bool s_started     = false;
+static bool s_started = false;
 
 /* 5. Forward declarations */
 /* (none yet: internal HMAC-compare/session-lookup helpers to be added
@@ -77,7 +77,8 @@ sas_status_t sas_auth_init(void)
 */
 sas_status_t sas_auth_start(void)
 {
-    if (!s_initialized) {
+    if (!s_initialized)
+    {
         return SAS_ERR_INVALID_STATE;
     }
 
@@ -96,7 +97,8 @@ sas_status_t sas_auth_start(void)
 */
 sas_status_t sas_auth_stop(void)
 {
-    if (!s_started) {
+    if (!s_started)
+    {
         return SAS_ERR_INVALID_STATE;
     }
 
@@ -114,7 +116,8 @@ sas_status_t sas_auth_stop(void)
 */
 sas_status_t sas_auth_deinit(void)
 {
-    if (!s_initialized) {
+    if (!s_initialized)
+    {
         return SAS_ERR_INVALID_STATE;
     }
 
@@ -140,9 +143,10 @@ sas_status_t sas_auth_deinit(void)
              auth.failed_login_delay_ms.
 */
 sas_status_t sas_auth_login(const char *username, const char *password,
-                             sas_auth_session_t *out_session)
+                            sas_auth_session_t *out_session)
 {
-    if ((username == NULL) || (password == NULL) || (out_session == NULL)) {
+    if ((username == NULL) || (password == NULL) || (out_session == NULL))
+    {
         return SAS_ERR_INVALID_ARG;
     }
 
@@ -189,7 +193,8 @@ sas_status_t sas_auth_login(const char *username, const char *password,
 */
 sas_status_t sas_auth_validate_token(const char *token)
 {
-    if (token == NULL) {
+    if (token == NULL)
+    {
         return SAS_ERR_INVALID_ARG;
     }
 
@@ -213,7 +218,8 @@ sas_status_t sas_auth_validate_token(const char *token)
 */
 sas_status_t sas_auth_logout(const char *token)
 {
-    if (token == NULL) {
+    if (token == NULL)
+    {
         return SAS_ERR_INVALID_ARG;
     }
 
@@ -237,10 +243,10 @@ sas_status_t sas_auth_logout(const char *token)
              is NULL; SAS_AUTH_ERR_INVALID_CREDENTIAL if current_password
              is wrong.
 */
-sas_status_t sas_auth_change_credential(const char *current_password,
-                                         const char *new_password)
+sas_status_t sas_auth_change_credential(const char *current_password, const char *new_password)
 {
-    if ((current_password == NULL) || (new_password == NULL)) {
+    if ((current_password == NULL) || (new_password == NULL))
+    {
         return SAS_ERR_INVALID_ARG;
     }
 

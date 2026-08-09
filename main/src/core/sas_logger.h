@@ -2,18 +2,11 @@
     \file    sas_logger.h
     \brief   Public interface for the Logger module.
 
-    \description
-    Thread-safe, level-filtered structured logging. This module owns the
-    only application-level logging entry points (sas_log_error/warn/info/
-    debug/verbose); every other module calls these instead of the raw
-    ESP-IDF ESP_LOGE/W/I/D/V macros directly.
-
-    \dependencies
-    - File Manager (main/src/storage/sas_file_manager.h): optional
-      persisted-log sink, attached once File Manager completes its own
-      init.
-    - Configuration Manager (main/src/core/sas_config.h): log level and
-      persistence toggle.
+    \details
+    Thread-safe, level-filtered logging used by every module instead of
+    ESP-IDF's ESP_LOGx macros. Define a file-local TAG, then call
+    sas_log_error/warn/info/debug/verbose(fmt, ...) - these add TAG and
+    forward to sas_log_emit_*() below.
 */
 
 #pragma once
@@ -32,7 +25,8 @@
 /* 4. Public types */
 
 /*! Logging severity levels, most to least severe. */
-typedef enum {
+typedef enum
+{
     SAS_LOG_LEVEL_ERROR = 0,
     SAS_LOG_LEVEL_WARN,
     SAS_LOG_LEVEL_INFO,
@@ -41,30 +35,35 @@ typedef enum {
 } sas_log_level_t;
 
 /*! Logger module configuration supplied to sas_logger_init(). */
-typedef struct {
-    sas_log_level_t min_level;         ///< Lowest severity emitted.
-    bool            persist_enabled;   ///< Enable the File Manager sink.
-    char            log_file_path[64]; ///< Persisted log file path.
+typedef struct
+{
+    sas_log_level_t min_level; ///< Lowest severity emitted.
+    bool persist_enabled;      ///< Enable the File Manager sink.
+    char log_file_path[64];    ///< Persisted log file path.
 } sas_logger_config_t;
 
 /* 5. Public constants */
 
-#define SAS_LOGGER_ERR_BASE      (0x8100U) ///< Custom status base for this module.
-#define SAS_LOGGER_ERR_RING_FULL (SAS_LOGGER_ERR_BASE + 1U) ///< Ring buffer full; entry dropped, counter incremented, never returned to the caller.
+#define SAS_LOGGER_ERR_BASE (0x8100U) ///< Custom status base for this module.
+#define SAS_LOGGER_ERR_RING_FULL \
+    (SAS_LOGGER_ERR_BASE +       \
+     1U) ///< Ring buffer full; entry dropped, counter incremented, never returned to the caller.
 
 /* 6. Public API declarations */
 
 /*!
     \brief   Initialize the Logger module.
     \param   cfg Non-NULL configuration; copied internally.
-    \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_ARG if cfg is NULL.
+    \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_ARG if cfg is NULL;
+             SAS_ERR_INVALID_STATE if already initialized.
 */
 sas_status_t sas_logger_init(const sas_logger_config_t *cfg);
 
 /*!
     \brief   Start active logging operation (ring buffer drain task, if
              persist_enabled).
-    \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_STATE if not initialized.
+    \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_STATE if not
+             initialized or already started.
 */
 sas_status_t sas_logger_start(void);
 
@@ -76,36 +75,51 @@ sas_status_t sas_logger_stop(void);
 
 /*!
     \brief   Release all resources acquired by sas_logger_init().
-    \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_STATE if not initialized.
+    \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_STATE if not
+             initialized or still started (call sas_logger_stop() first).
 */
 sas_status_t sas_logger_deinit(void);
 
 /*!
-    \brief   Log a message at ERROR severity.
-    \param   tag Non-NULL short module tag.
+    \brief   Tagged ERROR entry point; call sas_log_error() instead.
+    \param   tag Non-NULL module tag.
     \param   fmt Non-NULL printf-style format string.
-    \return  SAS_STATUS_OK if accepted; SAS_LOGGER_ERR_RING_FULL is never
-             returned to the caller (dropped counter is incremented
-             instead).
+    \return  SAS_STATUS_OK if accepted (SAS_LOGGER_ERR_RING_FULL is never
+             returned; a full ring buffer just increments the drop count).
 */
-sas_status_t sas_log_error(const char *tag, const char *fmt, ...)
+sas_status_t sas_log_emit_error(const char *tag, const char *fmt, ...)
     __attribute__((format(printf, 2, 3)));
 
-/*! \brief Log a message at WARN severity. \param tag Non-NULL short module tag. \param fmt Non-NULL printf-style format string. \return See sas_log_error(). */
-sas_status_t sas_log_warn(const char *tag, const char *fmt, ...)
+/*! \brief Tagged WARN-severity entry point; see sas_log_emit_error(). */
+sas_status_t sas_log_emit_warn(const char *tag, const char *fmt, ...)
     __attribute__((format(printf, 2, 3)));
 
-/*! \brief Log a message at INFO severity. \param tag Non-NULL short module tag. \param fmt Non-NULL printf-style format string. \return See sas_log_error(). */
-sas_status_t sas_log_info(const char *tag, const char *fmt, ...)
+/*! \brief Tagged INFO-severity entry point; see sas_log_emit_error(). */
+sas_status_t sas_log_emit_info(const char *tag, const char *fmt, ...)
     __attribute__((format(printf, 2, 3)));
 
-/*! \brief Log a message at DEBUG severity. \param tag Non-NULL short module tag. \param fmt Non-NULL printf-style format string. \return See sas_log_error(). */
-sas_status_t sas_log_debug(const char *tag, const char *fmt, ...)
+/*! \brief Tagged DEBUG-severity entry point; see sas_log_emit_error(). */
+sas_status_t sas_log_emit_debug(const char *tag, const char *fmt, ...)
     __attribute__((format(printf, 2, 3)));
 
-/*! \brief Log a message at VERBOSE severity. \param tag Non-NULL short module tag. \param fmt Non-NULL printf-style format string. \return See sas_log_error(). */
-sas_status_t sas_log_verbose(const char *tag, const char *fmt, ...)
+/*! \brief Tagged VERBOSE-severity entry point; see sas_log_emit_error(). */
+sas_status_t sas_log_emit_verbose(const char *tag, const char *fmt, ...)
     __attribute__((format(printf, 2, 3)));
+
+/*!
+    \brief Log a message at ERROR severity, tagged with the calling file's
+           file-local TAG. \param fmt Non-NULL printf-style format string.
+           \return See sas_log_emit_error().
+*/
+#define sas_log_error(fmt, ...) sas_log_emit_error(TAG, fmt, ##__VA_ARGS__)
+/*! \brief Log a message at WARN severity. See sas_log_error(). */
+#define sas_log_warn(fmt, ...) sas_log_emit_warn(TAG, fmt, ##__VA_ARGS__)
+/*! \brief Log a message at INFO severity. See sas_log_error(). */
+#define sas_log_info(fmt, ...) sas_log_emit_info(TAG, fmt, ##__VA_ARGS__)
+/*! \brief Log a message at DEBUG severity. See sas_log_error(). */
+#define sas_log_debug(fmt, ...) sas_log_emit_debug(TAG, fmt, ##__VA_ARGS__)
+/*! \brief Log a message at VERBOSE severity. See sas_log_error(). */
+#define sas_log_verbose(fmt, ...) sas_log_emit_verbose(TAG, fmt, ##__VA_ARGS__)
 
 /*!
     \brief   Set the minimum severity level emitted.

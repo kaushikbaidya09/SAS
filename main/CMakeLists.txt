@@ -3,9 +3,10 @@
 # Source/include layout: one subfolder per subsystem under main/src, each
 # holding exactly one .c/.h pair per module.
 #
-# TODO: once the HTTP Server's self-signed TLS certificate/key are
-# provisioned, embed them with:
-#   EMBED_TXTFILES "certs/server_cert.pem" "certs/server_key.pem"
+# certs/server_cert.pem + certs/server_key.pem are a dev-only self-signed
+# pair (see main/certs/ - regenerate per-device for anything beyond local
+# development); embedded so the HTTP Server can load them at sas_http_start()
+# without a filesystem dependency.
 
 idf_component_register(
     SRC_DIRS
@@ -24,4 +25,18 @@ idf_component_register(
         "src/web"
         "src/terminal"
         "src/auth"
+    EMBED_TXTFILES
+        "certs/server_cert.pem"
+        "certs/server_key.pem"
+    REQUIRES
+        esp_wifi
+        esp_event
+        esp_netif
+        nvs_flash
+        esp_timer
+        bt
+        esp_http_server
+        esp_https_server
+        esp_ringbuf
+        joltwallet__littlefs
 )

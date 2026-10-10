@@ -63,8 +63,7 @@ sas_status_t sas_ota_init(void)
 
 sas_status_t sas_ota_start(void)
 {
-    if (!s_initialized)
-    {
+    if (!s_initialized) {
         return SAS_ERR_INVALID_STATE;
     }
 
@@ -77,8 +76,7 @@ sas_status_t sas_ota_start(void)
 
 sas_status_t sas_ota_stop(void)
 {
-    if (!s_started)
-    {
+    if (!s_started) {
         return SAS_ERR_INVALID_STATE;
     }
 
@@ -92,8 +90,7 @@ sas_status_t sas_ota_stop(void)
 
 sas_status_t sas_ota_deinit(void)
 {
-    if (!s_initialized)
-    {
+    if (!s_initialized) {
         return SAS_ERR_INVALID_STATE;
     }
 
@@ -106,8 +103,7 @@ sas_status_t sas_ota_deinit(void)
 
 sas_status_t sas_ota_begin_from_upload(size_t total_size_hint)
 {
-    if (!s_started)
-    {
+    if (!s_started) {
         return SAS_ERR_INVALID_STATE;
     }
 
@@ -126,12 +122,10 @@ sas_status_t sas_ota_begin_from_upload(size_t total_size_hint)
 
 sas_status_t sas_ota_write_chunk(const uint8_t *data, size_t len)
 {
-    if (data == NULL)
-    {
+    if (data == NULL) {
         return SAS_ERR_INVALID_ARG;
     }
-    if (!s_started)
-    {
+    if (!s_started) {
         return SAS_ERR_INVALID_STATE;
     }
 
@@ -147,8 +141,7 @@ sas_status_t sas_ota_write_chunk(const uint8_t *data, size_t len)
 
 sas_status_t sas_ota_finish(void)
 {
-    if (!s_started)
-    {
+    if (!s_started) {
         return SAS_ERR_INVALID_STATE;
     }
 
@@ -172,12 +165,10 @@ sas_status_t sas_ota_finish(void)
 
 sas_status_t sas_ota_begin_from_url(const char *url)
 {
-    if (url == NULL)
-    {
+    if (url == NULL) {
         return SAS_ERR_INVALID_ARG;
     }
-    if (!s_started)
-    {
+    if (!s_started) {
         return SAS_ERR_INVALID_STATE;
     }
 

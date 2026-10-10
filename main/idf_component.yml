@@ -1,2 +1,5 @@
 dependencies:
     espressif/cjson: '*'
+    joltwallet/littlefs: '*' # backs File Manager (sas_file_manager.c); see root
+        # CMakeLists.txt's littlefs_create_partition_image() call, which this
+        # component provides.

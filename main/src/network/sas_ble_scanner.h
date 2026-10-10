@@ -23,8 +23,7 @@
 /* 4. Public types */
 
 /*! One de-duplicated BLE advertiser entry. */
-typedef struct
-{
+typedef struct {
     uint8_t mac[6];       ///< Advertiser MAC address.
     char name[32];        ///< Advertised device name, if present; empty otherwise.
     int8_t rssi;          ///< RSSI at last observation, in dBm.
@@ -34,11 +33,11 @@ typedef struct
 /* 5. Public constants */
 
 #define SAS_BLE_ERR_BASE (0x8A00U) ///< Custom status base for this module.
-#define SAS_BLE_ERR_ALREADY_SCANNING \
+#define SAS_BLE_ERR_ALREADY_SCANNING                                                               \
     (SAS_BLE_ERR_BASE + 1U) ///< scan_start() failed: a scan is already in progress.
-#define SAS_BLE_ERR_NOT_SCANNING \
+#define SAS_BLE_ERR_NOT_SCANNING                                                                   \
     (SAS_BLE_ERR_BASE + 2U) ///< scan_stop() failed: no scan is currently in progress.
-#define SAS_BLE_ERR_SCAN_FAILED \
+#define SAS_BLE_ERR_SCAN_FAILED                                                                    \
     (SAS_BLE_ERR_BASE + 3U) ///< scan_start() failed at the NimBLE driver level (address type
                             ///< resolution or ble_gap_disc()).
 

@@ -7,6 +7,12 @@
     ESP-IDF's ESP_LOGx macros. Define a file-local TAG, then call
     sas_log_error/warn/info/debug/verbose(fmt, ...) - these add TAG and
     forward to sas_log_emit_*() below.
+
+    Every entry accepted past the level filter is also kept in a small
+    fixed-size in-RAM history (independent of persist_enabled, which only
+    gates the File Manager sink) and published as SAS_EVENT_LOG_ENTRY on the
+    Event Bus, so the REST API and WebSocket modules can respectively
+    snapshot and live-stream recent log entries to the dashboard.
 */
 
 #pragma once
@@ -25,8 +31,7 @@
 /* 4. Public types */
 
 /*! Logging severity levels, most to least severe. */
-typedef enum
-{
+typedef enum {
     SAS_LOG_LEVEL_ERROR = 0,
     SAS_LOG_LEVEL_WARN,
     SAS_LOG_LEVEL_INFO,
@@ -35,19 +40,31 @@ typedef enum
 } sas_log_level_t;
 
 /*! Logger module configuration supplied to sas_logger_init(). */
-typedef struct
-{
+typedef struct {
     sas_log_level_t min_level; ///< Lowest severity emitted.
     bool persist_enabled;      ///< Enable the File Manager sink.
     char log_file_path[64];    ///< Persisted log file path.
 } sas_logger_config_t;
 
+/*! One entry in the in-RAM history returned by sas_log_get_entries(), and the payload shape of
+    SAS_EVENT_LOG_ENTRY. */
+typedef struct {
+    int64_t timestamp_us;  ///< esp_timer_get_time() at the moment this entry was accepted.
+    sas_log_level_t level; ///< Severity this entry was emitted at.
+    char tag[16];          ///< Emitting module's TAG, truncated if longer.
+    char message[100];     ///< Formatted message, truncated if longer.
+} sas_log_entry_t;
+
 /* 5. Public constants */
 
 #define SAS_LOGGER_ERR_BASE (0x8100U) ///< Custom status base for this module.
-#define SAS_LOGGER_ERR_RING_FULL \
-    (SAS_LOGGER_ERR_BASE +       \
+#define SAS_LOGGER_ERR_RING_FULL                                                                   \
+    (SAS_LOGGER_ERR_BASE +                                                                         \
      1U) ///< Ring buffer full; entry dropped, counter incremented, never returned to the caller.
+
+/*! Capacity of the in-RAM history backing sas_log_get_entries(); oldest entry is evicted once
+    full. Placeholder sizing; to be tuned during implementation against actual dashboard needs. */
+#define SAS_LOGGER_MAX_HISTORY_ENTRIES (64U)
 
 /* 6. Public API declarations */
 
@@ -139,3 +156,16 @@ sas_log_level_t sas_logger_get_level(void);
     \return  Cumulative dropped-entry count since init.
 */
 uint32_t sas_logger_get_dropped_count(void);
+
+/*!
+    \brief   Copy out the most recent entries from the in-RAM history,
+             oldest first.
+    \param   out_array   Non-NULL destination array of at least max_entries
+                         elements.
+    \param   max_entries Capacity of out_array, in entries.
+    \param   out_count   Non-NULL; receives the number of entries written.
+    \return  SAS_STATUS_OK; SAS_ERR_INVALID_ARG (bad args); SAS_ERR_INVALID_STATE
+             (not initialized); SAS_ERR_TIMEOUT (lock busy - *out_count left unset).
+*/
+sas_status_t sas_log_get_entries(sas_log_entry_t *out_array, uint16_t max_entries,
+                                  uint16_t *out_count);

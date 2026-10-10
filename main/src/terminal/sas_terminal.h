@@ -38,13 +38,13 @@
  * requires the macros to be defined first. */
 
 #define SAS_TERM_ERR_BASE (0x8C00U) ///< Custom status base for this module.
-#define SAS_TERM_ERR_CMD_NOT_FOUND \
+#define SAS_TERM_ERR_CMD_NOT_FOUND                                                                 \
     (SAS_TERM_ERR_BASE + 1U) ///< sas_terminal_execute() failed: argv[0] did not match any
                              ///< registered command; nothing was executed.
-#define SAS_TERM_ERR_UNAUTHORIZED \
+#define SAS_TERM_ERR_UNAUTHORIZED                                                                  \
     (SAS_TERM_ERR_BASE + 2U) ///< sas_terminal_execute() failed: the client's session token did not
                              ///< pass Authentication module validation.
-#define SAS_TERM_ERR_OUTPUT_TRUNCATED \
+#define SAS_TERM_ERR_OUTPUT_TRUNCATED                                                              \
     (SAS_TERM_ERR_BASE + 3U) ///< Command output reached SAS_TERM_MAX_OUTPUT_LEN before completing;
                              ///< remaining output was discarded and the truncation was reported to
                              ///< the client instead of being silently dropped.
@@ -85,8 +85,7 @@
 typedef sas_status_t (*sas_terminal_cmd_fn)(int argc, char **argv, sas_ws_client_t *client);
 
 /*! A single command registered in the static command table. */
-typedef struct
-{
+typedef struct {
     char name[SAS_TERM_MAX_CMD_NAME_LEN]; ///< Name matched against argv[0].
     sas_terminal_cmd_fn handler;          ///< Handler invoked on a match.
 } sas_terminal_command_t;
@@ -94,8 +93,7 @@ typedef struct
 /*!
     Per-client terminal session, isolating output buffering per client.
 */
-typedef struct
-{
+typedef struct {
     sas_ws_client_t client;                   ///< Owning WebSocket client.
     char output_buf[SAS_TERM_MAX_OUTPUT_LEN]; ///< Output pending flush to client.
     size_t output_len;                        ///< Bytes currently held in output_buf.

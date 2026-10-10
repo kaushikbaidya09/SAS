@@ -30,19 +30,16 @@
 #define SAS_CFG_MAX_STRING_LEN (64U)
 
 /*! Discriminator for the value union carried by sas_config_value_t. */
-typedef enum
-{
+typedef enum {
     SAS_CFG_TYPE_STRING = 0, ///< value.str_val is valid.
     SAS_CFG_TYPE_INT,        ///< value.int_val is valid.
     SAS_CFG_TYPE_BOOL,       ///< value.bool_val is valid.
 } sas_config_value_type_t;
 
 /*! A single typed configuration value. */
-typedef struct
-{
+typedef struct {
     sas_config_value_type_t type; ///< Which union member is valid.
-    union
-    {
+    union {
         char str_val[SAS_CFG_MAX_STRING_LEN]; ///< SAS_CFG_TYPE_STRING.
         int32_t int_val;                      ///< SAS_CFG_TYPE_INT.
         bool bool_val;                        ///< SAS_CFG_TYPE_BOOL.
@@ -52,21 +49,21 @@ typedef struct
 /* 5. Public constants */
 
 #define SAS_CFG_ERR_BASE (0x8200U) ///< Custom status base for this module.
-#define SAS_CFG_ERR_NOT_FOUND \
+#define SAS_CFG_ERR_NOT_FOUND                                                                      \
     (SAS_CFG_ERR_BASE + 1U) ///< Internal only; sas_config_get() handles a missing key itself.
-#define SAS_CFG_ERR_INVALID_VALUE \
+#define SAS_CFG_ERR_INVALID_VALUE                                                                  \
     (SAS_CFG_ERR_BASE + 2U) ///< sas_config_set(): val fails schema validation.
-#define SAS_CFG_ERR_STORE_FULL \
+#define SAS_CFG_ERR_STORE_FULL                                                                     \
     (SAS_CFG_ERR_BASE + 3U) ///< sas_config_set(): SAS_CFG_MAX_ENTRIES already reached.
 
-#define SAS_CFG_MAX_ENTRIES \
+#define SAS_CFG_MAX_ENTRIES                                                                        \
     (64U) ///< Maximum number of distinct keys held in the in-RAM table / backing file. Placeholder
           ///< size, to be tuned during implementation.
 /*! \see SAS_CFG_MAX_STRING_LEN, defined above in Public types (needed by
     sas_config_value_t). Listed here for discoverability alongside the
     other sizing constant. */
 
-#define SAS_CFG_MAX_KEY_LEN \
+#define SAS_CFG_MAX_KEY_LEN                                                                        \
     (32U) ///< Maximum length, including the null terminator, of a configuration key. Placeholder
           ///< size, to be tuned during implementation.
 

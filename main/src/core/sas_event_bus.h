@@ -12,6 +12,7 @@
 #pragma once
 
 /* 1. Standard includes */
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -24,8 +25,7 @@
 /* 4. Public types */
 
 /*! A single published event: an ID plus an optional, caller-owned payload. */
-typedef struct
-{
+typedef struct {
     uint32_t event_id;   ///< One of the SAS_EVENT_* IDs below.
     const void *payload; ///< Optional payload; may be NULL.
     size_t payload_len;  ///< Payload length in bytes; 0 if payload is NULL.
@@ -40,8 +40,7 @@ typedef struct
 typedef void (*sas_event_callback_fn)(const sas_event_t *event, void *user_ctx);
 
 /*! One entry in the internal subscription table. */
-typedef struct
-{
+typedef struct {
     uint32_t event_id;              ///< Event ID this subscription is for.
     sas_event_callback_fn callback; ///< Non-NULL callback to invoke.
     void *user_ctx;                 ///< Opaque context passed back to callback.
@@ -50,10 +49,10 @@ typedef struct
 /* 5. Public constants */
 
 #define SAS_EVT_ERR_BASE (0x8400U) ///< Custom sas_status_t base for this module.
-#define SAS_EVT_ERR_TABLE_FULL \
-    (SAS_EVT_ERR_BASE +        \
+#define SAS_EVT_ERR_TABLE_FULL                                                                     \
+    (SAS_EVT_ERR_BASE +                                                                            \
      1U) ///< subscribe() failed: SAS_EVT_MAX_SUBSCRIPTIONS entries already in use.
-#define SAS_EVT_ERR_PAYLOAD_TOO_LARGE \
+#define SAS_EVT_ERR_PAYLOAD_TOO_LARGE                                                              \
     (SAS_EVT_ERR_BASE + 2U) ///< publish() failed: payload_len exceeds SAS_EVT_MAX_PAYLOAD_LEN;
                             ///< event was not dispatched.
 
@@ -72,8 +71,7 @@ typedef struct
     owning module appends its own SAS_EVENT_* constants here as it is
     implemented.
 */
-typedef enum
-{
+typedef enum {
     /* Configuration Manager */
     SAS_EVENT_CONFIG_CHANGED = 1,
 
@@ -85,6 +83,10 @@ typedef enum
 
     /* BLE Manager */
     SAS_EVENT_BLE_DEVICE_DISCOVERED,
+
+    /* Logger */
+    SAS_EVENT_LOG_ENTRY, ///< Published by sas_log_emit_*() for each entry accepted past the
+                         ///< level filter; payload is a sas_log_entry_t (sas_logger.h).
 
     /* Additional SAS_EVENT_* constants are appended here by each owning
      * module as it is implemented. */
@@ -156,3 +158,16 @@ sas_status_t sas_event_bus_unsubscribe(uint32_t subscription_handle);
              (dispatch lock busy, not dispatched).
 */
 sas_status_t sas_event_bus_publish(uint32_t event_id, const void *payload, size_t payload_len);
+
+/*!
+    \brief   Query whether the Event Bus is currently started and safe to
+             publish() to.
+    \note    Exists for modules earlier in the boot's Development Order
+             (e.g. Logger) that may be called before the Event Bus itself
+             has started; publish()/subscribe() otherwise assume the
+             caller already knows the Event Bus is up.
+    \return  true if sas_event_bus_start() has been called and
+             sas_event_bus_stop()/sas_event_bus_deinit() has not since;
+             false otherwise.
+*/
+bool sas_event_bus_is_started(void);

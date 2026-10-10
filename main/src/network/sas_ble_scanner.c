@@ -30,8 +30,8 @@
 static const char *TAG = "sas_ble";
 
 /* 2. Private macros */
-#define SAS_BLE_LOCK_WAIT_TICKS \
-    pdMS_TO_TICKS(              \
+#define SAS_BLE_LOCK_WAIT_TICKS                                                                    \
+    pdMS_TO_TICKS(                                                                                 \
         50) ///< Bounded wait for s_table_lock; critical sections are short table scans/copies.
 
 #define SAS_BLE_MAC_LEN (6U) ///< Bytes in a BLE MAC address; matches sas_ble_device_t.mac.
@@ -39,8 +39,7 @@ static const char *TAG = "sas_ble";
 /* 3. Private typedefs */
 
 /*! One de-duplication table slot. */
-typedef struct
-{
+typedef struct {
     bool in_use;             ///< false if this slot is free.
     sas_ble_device_t device; ///< mac/name/rssi/last_seen_us.
 } sas_ble_slot_t;
@@ -80,8 +79,7 @@ static void load_config(void);
 
 sas_status_t sas_ble_init(void)
 {
-    if (s_initialized)
-    {
+    if (s_initialized) {
         return SAS_ERR_INVALID_STATE;
     }
 
@@ -97,8 +95,7 @@ sas_status_t sas_ble_init(void)
      * this: BLE Scanner declares no dependency on it and must not assume
      * a particular boot order relative to it. */
     esp_err_t err = nvs_flash_init();
-    if ((err == ESP_ERR_NVS_NO_FREE_PAGES) || (err == ESP_ERR_NVS_NEW_VERSION_FOUND))
-    {
+    if ((err == ESP_ERR_NVS_NO_FREE_PAGES) || (err == ESP_ERR_NVS_NEW_VERSION_FOUND)) {
         (void)nvs_flash_erase();
         err = nvs_flash_init();
     }
@@ -117,17 +114,14 @@ sas_status_t sas_ble_init(void)
 
 sas_status_t sas_ble_start(void)
 {
-    if (!s_initialized)
-    {
+    if (!s_initialized) {
         return SAS_ERR_INVALID_STATE;
     }
-    if (s_started)
-    {
+    if (s_started) {
         return SAS_ERR_INVALID_STATE;
     }
 
-    if (!s_host_started)
-    {
+    if (!s_host_started) {
         nimble_port_freertos_init(nimble_host_task);
         s_host_started = true;
     }
@@ -138,13 +132,11 @@ sas_status_t sas_ble_start(void)
 
 sas_status_t sas_ble_stop(void)
 {
-    if (!s_started)
-    {
+    if (!s_started) {
         return SAS_ERR_INVALID_STATE;
     }
 
-    if (s_scanning)
-    {
+    if (s_scanning) {
         (void)ble_gap_disc_cancel();
         s_scanning = false;
     }
@@ -155,17 +147,14 @@ sas_status_t sas_ble_stop(void)
 
 sas_status_t sas_ble_deinit(void)
 {
-    if (!s_initialized)
-    {
+    if (!s_initialized) {
         return SAS_ERR_INVALID_STATE;
     }
-    if (s_started)
-    {
+    if (s_started) {
         return SAS_ERR_INVALID_STATE;
     }
 
-    if (s_host_started)
-    {
+    if (s_host_started) {
         /* nimble_port_stop() causes nimble_port_run() to return inside
          * nimble_host_task(), which then calls
          * nimble_port_freertos_deinit() itself; calling that here instead
@@ -173,8 +162,7 @@ sas_status_t sas_ble_deinit(void)
         (void)nimble_port_stop();
         s_host_started = false;
     }
-    if (s_table_lock != NULL)
-    {
+    if (s_table_lock != NULL) {
         vSemaphoreDelete(s_table_lock);
         s_table_lock = NULL;
     }
@@ -187,34 +175,29 @@ sas_status_t sas_ble_deinit(void)
 
 sas_status_t sas_ble_scan_start(void)
 {
-    if (!s_started)
-    {
+    if (!s_started) {
         return SAS_ERR_INVALID_STATE;
     }
-    if (s_scanning)
-    {
+    if (s_scanning) {
         return SAS_BLE_ERR_ALREADY_SCANNING;
     }
-    if (!s_host_synced)
-    {
+    if (!s_host_synced) {
         return SAS_BLE_ERR_SCAN_FAILED; /* host/controller not ready yet */
     }
 
     uint8_t own_addr_type;
-    if (ble_hs_id_infer_auto(0, &own_addr_type) != 0)
-    {
+    if (ble_hs_id_infer_auto(0, &own_addr_type) != 0) {
         return SAS_BLE_ERR_SCAN_FAILED;
     }
 
     struct ble_gap_disc_params disc_params;
     (void)memset(&disc_params, 0, sizeof(disc_params));
-    disc_params.passive = 1;                                            /* SAS-BLE-NFR-002 / observer-only: never send scan requests */
-    disc_params.filter_duplicates = 0;                                  /* de-dup ourselves so rssi/last_seen_us keep updating */
+    disc_params.passive = 1; /* SAS-BLE-NFR-002 / observer-only: never send scan requests */
+    disc_params.filter_duplicates = 0; /* de-dup ourselves so rssi/last_seen_us keep updating */
     disc_params.itvl = (uint16_t)((s_scan_interval_ms * 1000U) / 625U); /* ms -> 0.625ms units */
     disc_params.window = (uint16_t)((s_scan_window_ms * 1000U) / 625U); /* ms -> 0.625ms units */
 
-    if (ble_gap_disc(own_addr_type, BLE_HS_FOREVER, &disc_params, &gap_event_cb, NULL) != 0)
-    {
+    if (ble_gap_disc(own_addr_type, BLE_HS_FOREVER, &disc_params, &gap_event_cb, NULL) != 0) {
         return SAS_BLE_ERR_SCAN_FAILED;
     }
 
@@ -224,12 +207,10 @@ sas_status_t sas_ble_scan_start(void)
 
 sas_status_t sas_ble_scan_stop(void)
 {
-    if (!s_started)
-    {
+    if (!s_started) {
         return SAS_ERR_INVALID_STATE;
     }
-    if (!s_scanning)
-    {
+    if (!s_scanning) {
         return SAS_BLE_ERR_NOT_SCANNING;
     }
 
@@ -241,25 +222,20 @@ sas_status_t sas_ble_scan_stop(void)
 sas_status_t sas_ble_get_devices(sas_ble_device_t *out_array, uint16_t max_entries,
                                  uint16_t *out_count)
 {
-    if ((out_array == NULL) || (out_count == NULL))
-    {
+    if ((out_array == NULL) || (out_count == NULL)) {
         return SAS_ERR_INVALID_ARG;
     }
-    if (!s_initialized)
-    {
+    if (!s_initialized) {
         return SAS_ERR_INVALID_STATE;
     }
 
-    if (xSemaphoreTake(s_table_lock, SAS_BLE_LOCK_WAIT_TICKS) != pdTRUE)
-    {
+    if (xSemaphoreTake(s_table_lock, SAS_BLE_LOCK_WAIT_TICKS) != pdTRUE) {
         return SAS_ERR_TIMEOUT;
     }
 
     uint16_t count = 0U;
-    for (size_t i = 0U; (i < s_max_devices) && (count < max_entries); i++)
-    {
-        if (s_table[i].in_use)
-        {
+    for (size_t i = 0U; (i < s_max_devices) && (count < max_entries); i++) {
+        if (s_table[i].in_use) {
             out_array[count] = s_table[i].device;
             count++;
         }
@@ -315,10 +291,8 @@ static void on_sync(void)
  * s_table_lock. */
 static sas_ble_slot_t *find_by_mac(const uint8_t mac[SAS_BLE_MAC_LEN])
 {
-    for (size_t i = 0U; i < s_max_devices; i++)
-    {
-        if (s_table[i].in_use && (memcmp(s_table[i].device.mac, mac, SAS_BLE_MAC_LEN) == 0))
-        {
+    for (size_t i = 0U; i < s_max_devices; i++) {
+        if (s_table[i].in_use && (memcmp(s_table[i].device.mac, mac, SAS_BLE_MAC_LEN) == 0)) {
             return &s_table[i];
         }
     }
@@ -329,20 +303,16 @@ static sas_ble_slot_t *find_by_mac(const uint8_t mac[SAS_BLE_MAC_LEN])
  * (SAS-BLE-NFR-001). Caller holds s_table_lock. */
 static sas_ble_slot_t *find_free_or_oldest_slot(void)
 {
-    for (size_t i = 0U; i < s_max_devices; i++)
-    {
-        if (!s_table[i].in_use)
-        {
+    for (size_t i = 0U; i < s_max_devices; i++) {
+        if (!s_table[i].in_use) {
             return &s_table[i];
         }
     }
 
     size_t oldest_index = 0U;
     int64_t oldest_time = s_table[0].device.last_seen_us;
-    for (size_t i = 1U; i < s_max_devices; i++)
-    {
-        if (s_table[i].device.last_seen_us < oldest_time)
-        {
+    for (size_t i = 1U; i < s_max_devices; i++) {
+        if (s_table[i].device.last_seen_us < oldest_time) {
             oldest_time = s_table[i].device.last_seen_us;
             oldest_index = i;
         }
@@ -364,11 +334,9 @@ static void record_advertisement(const uint8_t mac[SAS_BLE_MAC_LEN], const char 
     sas_ble_device_t snapshot;
     (void)memset(&snapshot, 0, sizeof(snapshot));
 
-    if (xSemaphoreTake(s_table_lock, SAS_BLE_LOCK_WAIT_TICKS) == pdTRUE)
-    {
+    if (xSemaphoreTake(s_table_lock, SAS_BLE_LOCK_WAIT_TICKS) == pdTRUE) {
         sas_ble_slot_t *slot = find_by_mac(mac);
-        if (slot == NULL)
-        {
+        if (slot == NULL) {
             slot = find_free_or_oldest_slot();
             (void)memset(slot, 0, sizeof(*slot));
             (void)memcpy(slot->device.mac, mac, SAS_BLE_MAC_LEN);
@@ -376,8 +344,7 @@ static void record_advertisement(const uint8_t mac[SAS_BLE_MAC_LEN], const char 
             is_new = true;
         }
 
-        if (name[0] != '\0')
-        {
+        if (name[0] != '\0') {
             (void)strncpy(slot->device.name, name, sizeof(slot->device.name) - 1U);
             slot->device.name[sizeof(slot->device.name) - 1U] = '\0';
         }
@@ -388,12 +355,10 @@ static void record_advertisement(const uint8_t mac[SAS_BLE_MAC_LEN], const char 
         xSemaphoreGive(s_table_lock);
     }
 
-    if (is_new)
-    {
+    if (is_new) {
         sas_status_t publish_status =
             sas_event_bus_publish(SAS_EVENT_BLE_DEVICE_DISCOVERED, &snapshot, sizeof(snapshot));
-        if (publish_status != SAS_STATUS_OK)
-        {
+        if (publish_status != SAS_STATUS_OK) {
             sas_log_warn("SAS_EVENT_BLE_DEVICE_DISCOVERED publish failed (0x%x)",
                          (unsigned int)publish_status);
         }
@@ -406,8 +371,7 @@ static int gap_event_cb(struct ble_gap_event *event, void *arg)
 {
     (void)arg;
 
-    if (event->type != BLE_GAP_EVENT_DISC)
-    {
+    if (event->type != BLE_GAP_EVENT_DISC) {
         return 0;
     }
 
@@ -415,10 +379,8 @@ static int gap_event_cb(struct ble_gap_event *event, void *arg)
     char name[32] = {0};
 
     struct ble_hs_adv_fields fields;
-    if (ble_hs_adv_parse_fields(&fields, disc->data, disc->length_data) == 0)
-    {
-        if ((fields.name != NULL) && (fields.name_len > 0U))
-        {
+    if (ble_hs_adv_parse_fields(&fields, disc->data, disc->length_data) == 0) {
+        if ((fields.name != NULL) && (fields.name_len > 0U)) {
             size_t len =
                 (fields.name_len < (sizeof(name) - 1U)) ? fields.name_len : (sizeof(name) - 1U);
             (void)memcpy(name, fields.name, len);

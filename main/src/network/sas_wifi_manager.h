@@ -35,8 +35,7 @@
     Each transition above publishes SAS_EVENT_WIFI_STATE_CHANGED on the
     Event Bus.
 */
-typedef enum
-{
+typedef enum {
     SAS_WIFI_STATE_IDLE = 0,
     SAS_WIFI_STATE_CONNECTING,
     SAS_WIFI_STATE_CONNECTED,
@@ -45,16 +44,14 @@ typedef enum
 } sas_wifi_state_t;
 
 /*! One access point found by sas_wifi_scan(). */
-typedef struct
-{
+typedef struct {
     char ssid[33];     ///< Null-terminated SSID, up to 32 characters.
     int8_t rssi;       ///< Received signal strength, in dBm.
     uint8_t auth_mode; ///< Authentication mode, per wifi_auth_mode_t.
 } sas_wifi_scan_result_t;
 
 /*! Station credentials supplied to sas_wifi_connect(). */
-typedef struct
-{
+typedef struct {
     char ssid[33];     ///< Null-terminated SSID, up to 32 characters.
     char password[65]; ///< Null-terminated passphrase, up to 64 characters.
 } sas_wifi_credentials_t;

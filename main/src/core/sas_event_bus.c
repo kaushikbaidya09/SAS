@@ -14,22 +14,21 @@
 #include "freertos/semphr.h"
 
 /* 2. Private macros */
-#define SAS_EVT_LOCK_WAIT_TICKS \
+#define SAS_EVT_LOCK_WAIT_TICKS                                                                    \
     pdMS_TO_TICKS(50) ///< Bounded wait for s_table_lock; critical sections are microsecond-scale.
-#define SAS_EVT_DISPATCH_WAIT_TICKS \
+#define SAS_EVT_DISPATCH_WAIT_TICKS                                                                \
     pdMS_TO_TICKS(1000) ///< Bounded wait for s_dispatch_lock; covers a concurrent publish() on
                         ///< another task or a chain of nested same-task publish() calls.
 
-#define SAS_EVT_HANDLE_INDEX_MASK \
+#define SAS_EVT_HANDLE_INDEX_MASK                                                                  \
     (0xFFFFU) ///< Low 16 bits of a handle: 1-based slot index (0 is invalid).
 
 /* 3. Private typedefs */
 
 /*! One subscription-table slot: bookkeeping plus the public-facing subscription fields. */
-typedef struct
-{
-    bool in_use;                  ///< false if this slot is free.
-    uint16_t generation;          ///< Bumped on unsubscribe(); invalidates stale handles into a reused slot.
+typedef struct {
+    bool in_use;         ///< false if this slot is free.
+    uint16_t generation; ///< Bumped on unsubscribe(); invalidates stale handles into a reused slot.
     sas_event_subscription_t sub; ///< event_id / callback / user_ctx.
 } sas_event_slot_t;
 
@@ -58,8 +57,7 @@ static bool decode_handle(uint32_t handle, size_t *out_index, uint16_t *out_gene
 
 sas_status_t sas_event_bus_init(void)
 {
-    if (s_initialized)
-    {
+    if (s_initialized) {
         return SAS_ERR_INVALID_STATE;
     }
 
@@ -78,12 +76,10 @@ sas_status_t sas_event_bus_init(void)
 
 sas_status_t sas_event_bus_start(void)
 {
-    if (!s_initialized)
-    {
+    if (!s_initialized) {
         return SAS_ERR_INVALID_STATE;
     }
-    if (s_started)
-    {
+    if (s_started) {
         return SAS_ERR_INVALID_STATE;
     }
 
@@ -93,8 +89,7 @@ sas_status_t sas_event_bus_start(void)
 
 sas_status_t sas_event_bus_stop(void)
 {
-    if (!s_started)
-    {
+    if (!s_started) {
         return SAS_ERR_INVALID_STATE;
     }
 
@@ -104,22 +99,18 @@ sas_status_t sas_event_bus_stop(void)
 
 sas_status_t sas_event_bus_deinit(void)
 {
-    if (!s_initialized)
-    {
+    if (!s_initialized) {
         return SAS_ERR_INVALID_STATE;
     }
-    if (s_started)
-    {
+    if (s_started) {
         return SAS_ERR_INVALID_STATE;
     }
 
-    if (s_dispatch_lock != NULL)
-    {
+    if (s_dispatch_lock != NULL) {
         vSemaphoreDelete(s_dispatch_lock);
         s_dispatch_lock = NULL;
     }
-    if (s_table_lock != NULL)
-    {
+    if (s_table_lock != NULL) {
         vSemaphoreDelete(s_table_lock);
         s_table_lock = NULL;
     }
@@ -132,22 +123,18 @@ sas_status_t sas_event_bus_deinit(void)
 sas_status_t sas_event_bus_subscribe(uint32_t event_id, sas_event_callback_fn cb, void *user_ctx,
                                      uint32_t *out_subscription_handle)
 {
-    if ((cb == NULL) || (out_subscription_handle == NULL))
-    {
+    if ((cb == NULL) || (out_subscription_handle == NULL)) {
         return SAS_ERR_INVALID_ARG;
     }
     configASSERT(s_initialized);
 
-    if (xSemaphoreTake(s_table_lock, SAS_EVT_LOCK_WAIT_TICKS) != pdTRUE)
-    {
+    if (xSemaphoreTake(s_table_lock, SAS_EVT_LOCK_WAIT_TICKS) != pdTRUE) {
         return SAS_ERR_TIMEOUT;
     }
 
     sas_status_t status = SAS_EVT_ERR_TABLE_FULL;
-    for (size_t i = 0U; i < SAS_EVT_MAX_SUBSCRIPTIONS; i++)
-    {
-        if (!s_table[i].in_use)
-        {
+    for (size_t i = 0U; i < SAS_EVT_MAX_SUBSCRIPTIONS; i++) {
+        if (!s_table[i].in_use) {
             s_table[i].in_use = true;
             s_table[i].sub.event_id = event_id;
             s_table[i].sub.callback = cb;
@@ -166,20 +153,17 @@ sas_status_t sas_event_bus_unsubscribe(uint32_t subscription_handle)
 {
     size_t index = 0U;
     uint16_t generation = 0U;
-    if (!decode_handle(subscription_handle, &index, &generation))
-    {
+    if (!decode_handle(subscription_handle, &index, &generation)) {
         return SAS_ERR_INVALID_ARG;
     }
     configASSERT(s_initialized);
 
-    if (xSemaphoreTake(s_table_lock, SAS_EVT_LOCK_WAIT_TICKS) != pdTRUE)
-    {
+    if (xSemaphoreTake(s_table_lock, SAS_EVT_LOCK_WAIT_TICKS) != pdTRUE) {
         return SAS_ERR_TIMEOUT;
     }
 
     sas_status_t status = SAS_ERR_INVALID_ARG;
-    if (s_table[index].in_use && (s_table[index].generation == generation))
-    {
+    if (s_table[index].in_use && (s_table[index].generation == generation)) {
         s_table[index].in_use = false;
         s_table[index].sub.callback = NULL;
         s_table[index].sub.user_ctx = NULL;
@@ -193,18 +177,15 @@ sas_status_t sas_event_bus_unsubscribe(uint32_t subscription_handle)
 
 sas_status_t sas_event_bus_publish(uint32_t event_id, const void *payload, size_t payload_len)
 {
-    if ((payload == NULL) && (payload_len != 0U))
-    {
+    if ((payload == NULL) && (payload_len != 0U)) {
         return SAS_ERR_INVALID_ARG;
     }
-    if (payload_len > SAS_EVT_MAX_PAYLOAD_LEN)
-    {
+    if (payload_len > SAS_EVT_MAX_PAYLOAD_LEN) {
         return SAS_EVT_ERR_PAYLOAD_TOO_LARGE;
     }
     configASSERT(s_initialized);
 
-    if (xSemaphoreTakeRecursive(s_dispatch_lock, SAS_EVT_DISPATCH_WAIT_TICKS) != pdTRUE)
-    {
+    if (xSemaphoreTakeRecursive(s_dispatch_lock, SAS_EVT_DISPATCH_WAIT_TICKS) != pdTRUE) {
         return SAS_ERR_TIMEOUT;
     }
 
@@ -213,20 +194,16 @@ sas_status_t sas_event_bus_publish(uint32_t event_id, const void *payload, size_
      * allows it); a shared scratch buffer would let that nested call
      * corrupt this call's in-flight snapshot/payload. */
     uint8_t payload_copy[SAS_EVT_MAX_PAYLOAD_LEN];
-    if (payload_len > 0U)
-    {
+    if (payload_len > 0U) {
         (void)memcpy(payload_copy, payload, payload_len);
     }
 
     sas_event_subscription_t snapshot[SAS_EVT_MAX_SUBSCRIPTIONS];
     size_t match_count = 0U;
 
-    if (xSemaphoreTake(s_table_lock, SAS_EVT_LOCK_WAIT_TICKS) == pdTRUE)
-    {
-        for (size_t i = 0U; i < SAS_EVT_MAX_SUBSCRIPTIONS; i++)
-        {
-            if (s_table[i].in_use && (s_table[i].sub.event_id == event_id))
-            {
+    if (xSemaphoreTake(s_table_lock, SAS_EVT_LOCK_WAIT_TICKS) == pdTRUE) {
+        for (size_t i = 0U; i < SAS_EVT_MAX_SUBSCRIPTIONS; i++) {
+            if (s_table[i].in_use && (s_table[i].sub.event_id == event_id)) {
                 snapshot[match_count] = s_table[i].sub;
                 match_count++;
             }
@@ -240,13 +217,17 @@ sas_status_t sas_event_bus_publish(uint32_t event_id, const void *payload, size_
         .payload_len = payload_len,
     };
 
-    for (size_t i = 0U; i < match_count; i++)
-    {
+    for (size_t i = 0U; i < match_count; i++) {
         snapshot[i].callback(&event, snapshot[i].user_ctx);
     }
 
     xSemaphoreGiveRecursive(s_dispatch_lock);
     return SAS_STATUS_OK;
+}
+
+bool sas_event_bus_is_started(void)
+{
+    return s_started;
 }
 
 /* 7. Private functions */
@@ -266,8 +247,7 @@ static uint32_t make_handle(size_t index, uint16_t generation)
 static bool decode_handle(uint32_t handle, size_t *out_index, uint16_t *out_generation)
 {
     uint32_t index_plus_one = handle & SAS_EVT_HANDLE_INDEX_MASK;
-    if ((index_plus_one == 0U) || (index_plus_one > SAS_EVT_MAX_SUBSCRIPTIONS))
-    {
+    if ((index_plus_one == 0U) || (index_plus_one > SAS_EVT_MAX_SUBSCRIPTIONS)) {
         return false;
     }
 

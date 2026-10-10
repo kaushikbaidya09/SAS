@@ -24,6 +24,7 @@
       /api/v1/wifi/x endpoints.
     - BLE Scanner (main/src/network/sas_ble_scanner.h): backs the
       /api/v1/ble/x endpoints.
+    - Logger (main/src/core/sas_logger.h): backs the /api/v1/logs endpoint.
     - OTA Manager (main/src/network/sas_ota_manager.h): backs the
       /api/v1/ota/x endpoints.
     - Authentication (main/src/auth/sas_auth.h): backs the
@@ -47,26 +48,25 @@
 
 /*! Standard error envelope reported to the HTTP client on any non-2xx
     response. */
-typedef struct
-{
-  int http_status;        ///< HTTP status code, e.g. 400, 404, 500.
-  const char *error_code; ///< Short machine-readable code, e.g. "invalid_request".
-  const char *message;    ///< Human-readable detail for logs/UI.
+typedef struct {
+    int http_status;        ///< HTTP status code, e.g. 400, 404, 500.
+    const char *error_code; ///< Short machine-readable code, e.g. "invalid_request".
+    const char *message;    ///< Human-readable detail for logs/UI.
 } sas_api_error_t;
 
 /* 5. Public constants */
 
-#define SAS_API_ERR_BASE \
-  (0x8800U) ///< Custom sas_status_t base for this module. Note: this module reports errors to
-            ///< HTTP clients as sas_api_error_t values, not as sas_status_t codes returned from
-            ///< every internal path; the base is defined here for numbering consistency with
-            ///< sibling modules.
+#define SAS_API_ERR_BASE                                                                           \
+    (0x8800U) ///< Custom sas_status_t base for this module. Note: this module reports errors to
+              ///< HTTP clients as sas_api_error_t values, not as sas_status_t codes returned from
+              ///< every internal path; the base is defined here for numbering consistency with
+              ///< sibling modules.
 
-#define SAS_API_MAX_BODY_LEN \
-  (4096U) ///< Placeholder maximum accepted request body length in bytes, enforced by the shared
-          ///< request-body reader before cJSON_Parse() is invoked. The authoritative value at
-          ///< runtime is the api.max_body_len configuration key (Configuration Manager); this
-          ///< macro is a compile-time fallback.
+#define SAS_API_MAX_BODY_LEN                                                                       \
+    (4096U) ///< Placeholder maximum accepted request body length in bytes, enforced by the shared
+            ///< request-body reader before cJSON_Parse() is invoked. The authoritative value at
+            ///< runtime is the api.max_body_len configuration key (Configuration Manager); this
+            ///< macro is a compile-time fallback.
 
 /* 6. Public API declarations */
 

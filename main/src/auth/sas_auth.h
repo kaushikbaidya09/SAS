@@ -32,8 +32,7 @@
 /* 4. Public types */
 
 /*! An issued authentication session. */
-typedef struct
-{
+typedef struct {
     char token[33];        ///< 32 hex-digit session token, NUL-terminated.
     int64_t issued_at_us;  ///< Issue timestamp, microseconds since boot/epoch.
     int64_t expires_at_us; ///< Expiry timestamp, microseconds since boot/epoch.
@@ -42,19 +41,19 @@ typedef struct
 /* 5. Public constants */
 
 #define SAS_AUTH_ERR_BASE (0x8D00U) ///< Custom status base for this module.
-#define SAS_AUTH_ERR_INVALID_CREDENTIAL \
+#define SAS_AUTH_ERR_INVALID_CREDENTIAL                                                            \
     (SAS_AUTH_ERR_BASE + 1U) ///< Login attempted with a wrong username/password.
-#define SAS_AUTH_ERR_TOKEN_EXPIRED \
-    (SAS_AUTH_ERR_BASE +           \
+#define SAS_AUTH_ERR_TOKEN_EXPIRED                                                                 \
+    (SAS_AUTH_ERR_BASE +                                                                           \
      2U) ///< sas_auth_validate_token() called with a token past its expiry time.
-#define SAS_AUTH_ERR_TOKEN_UNKNOWN \
+#define SAS_AUTH_ERR_TOKEN_UNKNOWN                                                                 \
     (SAS_AUTH_ERR_BASE + 3U) ///< sas_auth_validate_token()/sas_auth_logout() called with a token
                              ///< not in the session table.
-#define SAS_AUTH_ERR_RATE_LIMITED \
+#define SAS_AUTH_ERR_RATE_LIMITED                                                                  \
     (SAS_AUTH_ERR_BASE + 4U) ///< Login attempt arrived before auth.failed_login_delay_ms elapsed
                              ///< since the client's last failure.
 
-#define SAS_AUTH_MAX_SESSIONS \
+#define SAS_AUTH_MAX_SESSIONS                                                                      \
     (4U) ///< Session pool size placeholder; reconcile with auth.max_sessions at implementation
          ///< time.
 

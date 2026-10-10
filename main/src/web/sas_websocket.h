@@ -32,8 +32,7 @@
 /* 4. Public types */
 
 /*! Broadcastable message categories carried in the JSON envelope's "type" field. */
-typedef enum
-{
+typedef enum {
     SAS_WS_MSG_SYSINFO = 0,
     SAS_WS_MSG_WIFI_STATE,
     SAS_WS_MSG_OTA_PROGRESS,
@@ -43,16 +42,15 @@ typedef enum
 } sas_ws_msg_type_t;
 
 /*! Handle identifying a single connected WebSocket client. */
-typedef struct
-{
+typedef struct {
     int fd; ///< Underlying socket descriptor, as reported by the HTTP Server.
 } sas_ws_client_t;
 
 /* 5. Public constants */
 
 #define SAS_WS_ERR_BASE (0x8900U) ///< Custom status base for this module.
-#define SAS_WS_ERR_CLIENT_TABLE_FULL \
-    (SAS_WS_ERR_BASE +               \
+#define SAS_WS_ERR_CLIENT_TABLE_FULL                                                               \
+    (SAS_WS_ERR_BASE +                                                                             \
      1U) ///< Connect attempt rejected: SAS_WS_MAX_CLIENTS connections already tracked.
 
 /*!

@@ -37,8 +37,7 @@
 typedef esp_err_t (*sas_http_handler_fn)(httpd_req_t *req);
 
 /*! A single route registered with the HTTP Server module. */
-typedef struct
-{
+typedef struct {
     const char *uri;             ///< Route path, e.g. "/api/status".
     httpd_method_t method;       ///< HTTP method this route matches.
     sas_http_handler_fn handler; ///< Handler invoked on a match.
@@ -103,3 +102,13 @@ sas_status_t sas_http_register_route(const sas_http_route_t *route);
              already registered.
 */
 sas_status_t sas_http_register_ws_handler(const char *uri, httpd_uri_t *ws_uri_handler);
+
+/*!
+    \brief   Get the shared httpd_ssl server handle, for callers (WebSocket)
+             that need it directly - e.g. httpd_queue_work()/
+             httpd_ws_send_frame_async() to send from a task other than the
+             one currently dispatching a request.
+    \return  The server handle if sas_http_start() has been called and
+             sas_http_stop() has not since; NULL otherwise.
+*/
+httpd_handle_t sas_http_get_server_handle(void);

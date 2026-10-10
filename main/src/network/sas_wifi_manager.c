@@ -28,26 +28,26 @@
 static const char *TAG = "sas_wifi";
 
 /* 2. Private macros */
-#define SAS_WIFI_LOCK_WAIT_TICKS \
-    pdMS_TO_TICKS(               \
+#define SAS_WIFI_LOCK_WAIT_TICKS                                                                   \
+    pdMS_TO_TICKS(                                                                                 \
         50) ///< Bounded wait for s_state_lock; critical sections are short field reads/writes.
-#define SAS_WIFI_SCAN_LOCK_WAIT_TICKS \
+#define SAS_WIFI_SCAN_LOCK_WAIT_TICKS                                                              \
     pdMS_TO_TICKS(100) ///< Bounded wait to serialize concurrent sas_wifi_scan() callers.
 
-#define SAS_WIFI_SCAN_MAX_RECORDS \
+#define SAS_WIFI_SCAN_MAX_RECORDS                                                                  \
     (20U) ///< Internal esp_wifi scan buffer capacity; placeholder, to be tuned during
           ///< implementation.
 
-#define SAS_WIFI_MAX_BACKOFF_MS \
+#define SAS_WIFI_MAX_BACKOFF_MS                                                                    \
     (60000U) ///< Ceiling on the exponential backoff delay, regardless of retry count.
-#define SAS_WIFI_MAX_BACKOFF_SHIFT \
+#define SAS_WIFI_MAX_BACKOFF_SHIFT                                                                 \
     (10U) ///< Caps the retry-count left-shift so it can never itself overflow uint32_t.
 
 #define SAS_WIFI_AP_FALLBACK_CHANNEL (1U) ///< Placeholder fixed channel for the fallback AP.
-#define SAS_WIFI_AP_FALLBACK_MAX_CONN \
+#define SAS_WIFI_AP_FALLBACK_MAX_CONN                                                              \
     (4U) ///< Placeholder max simultaneous clients on the fallback AP.
 
-#define SAS_WIFI_CONNECTED_BIT \
+#define SAS_WIFI_CONNECTED_BIT                                                                     \
     (1U << 0) ///< s_connect_event_group bit set by wifi_event_handler() on IP_EVENT_STA_GOT_IP.
 
 /* 3. Private typedefs */
@@ -103,8 +103,7 @@ static uint32_t compute_backoff_ms(uint32_t retry_count);
 
 sas_status_t sas_wifi_init(void)
 {
-    if (s_initialized)
-    {
+    if (s_initialized) {
         return SAS_ERR_INVALID_STATE;
     }
 
@@ -114,8 +113,7 @@ sas_status_t sas_wifi_init(void)
      * here. sas_wifi_deinit() deliberately leaves it running, since other
      * modules (HTTP Server, OTA Manager) need it too. */
     esp_err_t err = nvs_flash_init();
-    if ((err == ESP_ERR_NVS_NO_FREE_PAGES) || (err == ESP_ERR_NVS_NEW_VERSION_FOUND))
-    {
+    if ((err == ESP_ERR_NVS_NO_FREE_PAGES) || (err == ESP_ERR_NVS_NEW_VERSION_FOUND)) {
         (void)nvs_flash_erase();
         err = nvs_flash_init();
     }
@@ -168,23 +166,18 @@ sas_status_t sas_wifi_init(void)
 
 sas_status_t sas_wifi_start(void)
 {
-    if (!s_initialized)
-    {
+    if (!s_initialized) {
         return SAS_ERR_INVALID_STATE;
     }
-    if (s_started)
-    {
+    if (s_started) {
         return SAS_ERR_INVALID_STATE;
     }
 
     s_started = true;
 
-    if (s_creds.ssid[0] == '\0')
-    {
+    if (s_creds.ssid[0] == '\0') {
         switch_to_ap_fallback();
-    }
-    else
-    {
+    } else {
         /* sas_wifi_connect() -> begin_sta_connect() performs the full
          * stop-then-configure-then-start sequence itself; esp_wifi_stop()
          * on a never-yet-started driver is a harmless no-op. */
@@ -196,8 +189,7 @@ sas_status_t sas_wifi_start(void)
 
 sas_status_t sas_wifi_stop(void)
 {
-    if (!s_started)
-    {
+    if (!s_started) {
         return SAS_ERR_INVALID_STATE;
     }
 
@@ -207,8 +199,7 @@ sas_status_t sas_wifi_stop(void)
     (void)esp_wifi_stop();
 
     set_state_and_publish(SAS_WIFI_STATE_IDLE);
-    if (xSemaphoreTake(s_state_lock, SAS_WIFI_LOCK_WAIT_TICKS) == pdTRUE)
-    {
+    if (xSemaphoreTake(s_state_lock, SAS_WIFI_LOCK_WAIT_TICKS) == pdTRUE) {
         s_retry_count = 0U;
         xSemaphoreGive(s_state_lock);
     }
@@ -219,55 +210,45 @@ sas_status_t sas_wifi_stop(void)
 
 sas_status_t sas_wifi_deinit(void)
 {
-    if (!s_initialized)
-    {
+    if (!s_initialized) {
         return SAS_ERR_INVALID_STATE;
     }
-    if (s_started)
-    {
+    if (s_started) {
         return SAS_ERR_INVALID_STATE;
     }
 
-    if (s_retry_timer != NULL)
-    {
+    if (s_retry_timer != NULL) {
         (void)esp_timer_delete(s_retry_timer);
         s_retry_timer = NULL;
     }
-    if (s_wifi_event_handler_instance != NULL)
-    {
+    if (s_wifi_event_handler_instance != NULL) {
         (void)esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID,
                                                     s_wifi_event_handler_instance);
         s_wifi_event_handler_instance = NULL;
     }
-    if (s_ip_event_handler_instance != NULL)
-    {
+    if (s_ip_event_handler_instance != NULL) {
         (void)esp_event_handler_instance_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP,
                                                     s_ip_event_handler_instance);
         s_ip_event_handler_instance = NULL;
     }
     (void)esp_wifi_deinit();
-    if (s_netif_sta != NULL)
-    {
+    if (s_netif_sta != NULL) {
         esp_netif_destroy(s_netif_sta);
         s_netif_sta = NULL;
     }
-    if (s_netif_ap != NULL)
-    {
+    if (s_netif_ap != NULL) {
         esp_netif_destroy(s_netif_ap);
         s_netif_ap = NULL;
     }
-    if (s_connect_event_group != NULL)
-    {
+    if (s_connect_event_group != NULL) {
         vEventGroupDelete(s_connect_event_group);
         s_connect_event_group = NULL;
     }
-    if (s_scan_lock != NULL)
-    {
+    if (s_scan_lock != NULL) {
         vSemaphoreDelete(s_scan_lock);
         s_scan_lock = NULL;
     }
-    if (s_state_lock != NULL)
-    {
+    if (s_state_lock != NULL) {
         vSemaphoreDelete(s_state_lock);
         s_state_lock = NULL;
     }
@@ -281,12 +262,10 @@ sas_status_t sas_wifi_deinit(void)
 
 sas_status_t sas_wifi_connect(const sas_wifi_credentials_t *creds)
 {
-    if (creds == NULL)
-    {
+    if (creds == NULL) {
         return SAS_ERR_INVALID_ARG;
     }
-    if (!s_started)
-    {
+    if (!s_started) {
         return SAS_ERR_INVALID_STATE;
     }
 
@@ -295,20 +274,17 @@ sas_status_t sas_wifi_connect(const sas_wifi_credentials_t *creds)
     (void)strncpy(val.value.str_val, creds->ssid, SAS_CFG_MAX_STRING_LEN - 1U);
     val.value.str_val[SAS_CFG_MAX_STRING_LEN - 1U] = '\0';
     sas_status_t persist_status = sas_config_set("wifi.sta.ssid", &val);
-    if (persist_status != SAS_STATUS_OK)
-    {
+    if (persist_status != SAS_STATUS_OK) {
         sas_log_warn("failed to persist wifi.sta.ssid (0x%x)", (unsigned int)persist_status);
     }
     (void)strncpy(val.value.str_val, creds->password, SAS_CFG_MAX_STRING_LEN - 1U);
     val.value.str_val[SAS_CFG_MAX_STRING_LEN - 1U] = '\0';
     persist_status = sas_config_set("wifi.sta.password", &val);
-    if (persist_status != SAS_STATUS_OK)
-    {
+    if (persist_status != SAS_STATUS_OK) {
         sas_log_warn("failed to persist wifi.sta.password (0x%x)", (unsigned int)persist_status);
     }
 
-    if (xSemaphoreTake(s_state_lock, SAS_WIFI_LOCK_WAIT_TICKS) == pdTRUE)
-    {
+    if (xSemaphoreTake(s_state_lock, SAS_WIFI_LOCK_WAIT_TICKS) == pdTRUE) {
         s_creds = *creds;
         s_retry_count = 0U;
         xSemaphoreGive(s_state_lock);
@@ -320,8 +296,7 @@ sas_status_t sas_wifi_connect(const sas_wifi_credentials_t *creds)
 
     EventBits_t bits = xEventGroupWaitBits(s_connect_event_group, SAS_WIFI_CONNECTED_BIT, pdFALSE,
                                            pdFALSE, pdMS_TO_TICKS(s_connect_timeout_ms));
-    if ((bits & SAS_WIFI_CONNECTED_BIT) != 0U)
-    {
+    if ((bits & SAS_WIFI_CONNECTED_BIT) != 0U) {
         return SAS_STATUS_OK;
     }
     return SAS_WIFI_ERR_TIMEOUT; /* state machine continues asynchronously in the background */
@@ -330,37 +305,29 @@ sas_status_t sas_wifi_connect(const sas_wifi_credentials_t *creds)
 sas_status_t sas_wifi_scan(sas_wifi_scan_result_t *out_array, uint8_t max_results,
                            uint8_t *out_count)
 {
-    if ((out_array == NULL) || (out_count == NULL))
-    {
+    if ((out_array == NULL) || (out_count == NULL)) {
         return SAS_ERR_INVALID_ARG;
     }
-    if (!s_started)
-    {
+    if (!s_started) {
         return SAS_ERR_INVALID_STATE;
     }
 
-    if (xSemaphoreTake(s_scan_lock, SAS_WIFI_SCAN_LOCK_WAIT_TICKS) != pdTRUE)
-    {
+    if (xSemaphoreTake(s_scan_lock, SAS_WIFI_SCAN_LOCK_WAIT_TICKS) != pdTRUE) {
         return SAS_ERR_TIMEOUT;
     }
 
     sas_status_t status = SAS_STATUS_OK;
-    if (esp_wifi_scan_start(NULL, true) != ESP_OK)
-    {
+    if (esp_wifi_scan_start(NULL, true) != ESP_OK) {
         *out_count = 0U;
         status = SAS_WIFI_ERR_SCAN_FAILED;
-    }
-    else
-    {
+    } else {
         uint16_t ap_count = SAS_WIFI_SCAN_MAX_RECORDS;
         (void)esp_wifi_scan_get_ap_records(&ap_count, s_scan_records);
-        if (ap_count > max_results)
-        {
+        if (ap_count > max_results) {
             ap_count = max_results;
         }
 
-        for (uint16_t i = 0U; i < ap_count; i++)
-        {
+        for (uint16_t i = 0U; i < ap_count; i++) {
             (void)strncpy(out_array[i].ssid, (const char *)s_scan_records[i].ssid,
                           sizeof(out_array[i].ssid) - 1U);
             out_array[i].ssid[sizeof(out_array[i].ssid) - 1U] = '\0';
@@ -378,8 +345,7 @@ sas_wifi_state_t sas_wifi_get_state(void)
 {
     sas_wifi_state_t state = SAS_WIFI_STATE_IDLE;
 
-    if (s_initialized && (xSemaphoreTake(s_state_lock, SAS_WIFI_LOCK_WAIT_TICKS) == pdTRUE))
-    {
+    if (s_initialized && (xSemaphoreTake(s_state_lock, SAS_WIFI_LOCK_WAIT_TICKS) == pdTRUE)) {
         state = s_state;
         xSemaphoreGive(s_state_lock);
     }
@@ -423,16 +389,14 @@ static void load_config(void)
  * holding s_state_lock). */
 static void set_state_and_publish(sas_wifi_state_t new_state)
 {
-    if (xSemaphoreTake(s_state_lock, SAS_WIFI_LOCK_WAIT_TICKS) == pdTRUE)
-    {
+    if (xSemaphoreTake(s_state_lock, SAS_WIFI_LOCK_WAIT_TICKS) == pdTRUE) {
         s_state = new_state;
         xSemaphoreGive(s_state_lock);
     }
 
     sas_status_t publish_status =
         sas_event_bus_publish(SAS_EVENT_WIFI_STATE_CHANGED, &new_state, sizeof(new_state));
-    if (publish_status != SAS_STATUS_OK)
-    {
+    if (publish_status != SAS_STATUS_OK) {
         sas_log_warn("SAS_EVENT_WIFI_STATE_CHANGED publish failed (0x%x)",
                      (unsigned int)publish_status);
     }
@@ -464,8 +428,7 @@ static void begin_sta_connect(void)
  * link. */
 static void issue_connect_or_handle_failure(void)
 {
-    if (esp_wifi_connect() != ESP_OK)
-    {
+    if (esp_wifi_connect() != ESP_OK) {
         handle_sta_disconnected();
     }
 }
@@ -475,39 +438,30 @@ static void issue_connect_or_handle_failure(void)
 static void handle_sta_disconnected(void)
 {
     sas_wifi_state_t current;
-    if (xSemaphoreTake(s_state_lock, SAS_WIFI_LOCK_WAIT_TICKS) == pdTRUE)
-    {
+    if (xSemaphoreTake(s_state_lock, SAS_WIFI_LOCK_WAIT_TICKS) == pdTRUE) {
         current = s_state;
         xSemaphoreGive(s_state_lock);
-    }
-    else
-    {
+    } else {
         current = s_state;
     }
 
-    if ((current == SAS_WIFI_STATE_IDLE) || (current == SAS_WIFI_STATE_AP_FALLBACK))
-    {
+    if ((current == SAS_WIFI_STATE_IDLE) || (current == SAS_WIFI_STATE_AP_FALLBACK)) {
         return; /* no active STA attempt in progress; ignore spurious disconnect event */
     }
 
     uint32_t retry_count = 0U;
     bool exhausted = false;
-    if (xSemaphoreTake(s_state_lock, SAS_WIFI_LOCK_WAIT_TICKS) == pdTRUE)
-    {
-        if (s_retry_count < s_max_retry_count)
-        {
+    if (xSemaphoreTake(s_state_lock, SAS_WIFI_LOCK_WAIT_TICKS) == pdTRUE) {
+        if (s_retry_count < s_max_retry_count) {
             s_retry_count++;
             retry_count = s_retry_count;
-        }
-        else
-        {
+        } else {
             exhausted = true;
         }
         xSemaphoreGive(s_state_lock);
     }
 
-    if (exhausted)
-    {
+    if (exhausted) {
         set_state_and_publish(
             SAS_WIFI_STATE_AP_FALLBACK); /* exactly one transition event, per AC-WIFI-2 */
         switch_to_ap_fallback();
@@ -538,14 +492,12 @@ static void retry_timer_callback(void *arg)
 static uint32_t compute_backoff_ms(uint32_t retry_count)
 {
     uint32_t shift = (retry_count > 0U) ? (retry_count - 1U) : 0U;
-    if (shift > SAS_WIFI_MAX_BACKOFF_SHIFT)
-    {
+    if (shift > SAS_WIFI_MAX_BACKOFF_SHIFT) {
         shift = SAS_WIFI_MAX_BACKOFF_SHIFT;
     }
 
     uint64_t backoff = (uint64_t)s_initial_backoff_ms << shift;
-    if (backoff > SAS_WIFI_MAX_BACKOFF_MS)
-    {
+    if (backoff > SAS_WIFI_MAX_BACKOFF_MS) {
         backoff = SAS_WIFI_MAX_BACKOFF_MS;
     }
     return (uint32_t)backoff;
@@ -592,36 +544,24 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
     (void)arg;
     (void)event_data;
 
-    if (event_base == WIFI_EVENT)
-    {
-        if (event_id == WIFI_EVENT_STA_START)
-        {
+    if (event_base == WIFI_EVENT) {
+        if (event_id == WIFI_EVENT_STA_START) {
             issue_connect_or_handle_failure();
-        }
-        else if (event_id == WIFI_EVENT_STA_DISCONNECTED)
-        {
+        } else if (event_id == WIFI_EVENT_STA_DISCONNECTED) {
             handle_sta_disconnected();
-        }
-        else
-        {
+        } else {
             /* other WIFI_EVENT ids are not handled by this module */
         }
-    }
-    else if (event_base == IP_EVENT)
-    {
-        if (event_id == IP_EVENT_STA_GOT_IP)
-        {
-            if (xSemaphoreTake(s_state_lock, SAS_WIFI_LOCK_WAIT_TICKS) == pdTRUE)
-            {
+    } else if (event_base == IP_EVENT) {
+        if (event_id == IP_EVENT_STA_GOT_IP) {
+            if (xSemaphoreTake(s_state_lock, SAS_WIFI_LOCK_WAIT_TICKS) == pdTRUE) {
                 s_retry_count = 0U;
                 xSemaphoreGive(s_state_lock);
             }
             set_state_and_publish(SAS_WIFI_STATE_CONNECTED);
             xEventGroupSetBits(s_connect_event_group, SAS_WIFI_CONNECTED_BIT);
         }
-    }
-    else
-    {
+    } else {
         /* no other event bases are registered */
     }
 }

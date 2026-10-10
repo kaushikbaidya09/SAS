@@ -14,6 +14,8 @@
 /* 1. Includes */
 #include "sas_sysinfo.h"
 
+#include "esp_timer.h"
+
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -36,10 +38,9 @@ static int64_t s_boot_time_us = 0; ///< Boot timestamp recorded by sas_sysinfo_i
 
 sas_status_t sas_sysinfo_init(void)
 {
-    /* TODO:
-     * 1. Record the current timestamp into s_boot_time_us (e.g. via
-     *    esp_timer_get_time()) for later uptime_seconds computation.
-     * 2. Retain no other internal state. */
+    /* Boot timestamp for later uptime_seconds computation; no other internal
+     * state is retained. */
+    s_boot_time_us = esp_timer_get_time();
     s_initialized = true;
     return SAS_ERR_NOT_SUPPORTED;
 }

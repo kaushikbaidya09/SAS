@@ -46,7 +46,10 @@ static bool s_initialized = false;
 static bool s_started = false;
 
 /* 5. Forward declarations */
-static void publish_progress(sas_ota_state_t state, uint8_t percent_complete);
+/* Marked unused until the state-changing functions below are implemented and
+ * call it. */
+static void publish_progress(sas_ota_state_t state, uint8_t percent_complete)
+    __attribute__((unused));
 
 /* 6. Public functions */
 

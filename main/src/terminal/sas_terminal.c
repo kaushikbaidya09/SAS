@@ -33,7 +33,10 @@ static bool s_initialized = false;
 static bool s_started = false;
 
 /* 5. Forward declarations */
-static sas_status_t dispatch_command(sas_ws_client_t *client, const char *command_line);
+/* Marked unused until the WebSocket terminal-input handler is implemented and
+ * calls it. */
+static sas_status_t dispatch_command(sas_ws_client_t *client, const char *command_line)
+    __attribute__((unused));
 
 /* 6. Public functions */
 

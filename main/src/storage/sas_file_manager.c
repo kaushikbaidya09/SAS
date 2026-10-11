@@ -17,6 +17,7 @@
 #include "sas_file_manager.h"
 
 #include <dirent.h>
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -41,6 +42,8 @@ static const char *TAG = "sas_fs";
     ".tmp"                         ///< Temp path suffix used by sas_fs_write() for the write-then-rename replace.
 #define SAS_FS_TMP_SUFFIX_LEN (4U) ///< strlen(SAS_FS_TMP_SUFFIX); sizes the temp-path buffer.
 
+#define SAS_FS_PATH_MAX_LEN (128U) ///< Longest path (including NUL) this module builds internally.
+
 #define SAS_FS_LOCK_WAIT_TICKS \
     pdMS_TO_TICKS(1000) ///< Bounded wait for s_path_lock; write()/delete()/rename() touch flash
                         ///< and can legitimately take longer than the short in-RAM critical
@@ -56,9 +59,15 @@ static bool s_started = false;
 static SemaphoreHandle_t s_path_lock = NULL;
 static StaticSemaphore_t s_path_lock_storage;
 
+/* Streamed write state (sas_fs_write_begin()/append()/commit()/abort()); guarded by s_path_lock. */
+static FILE *s_stream_file = NULL;                ///< Open temp file; NULL if no stream is open.
+static char s_stream_path[SAS_FS_PATH_MAX_LEN];   ///< Final destination path.
+static char s_stream_tmp_path[SAS_FS_PATH_MAX_LEN + SAS_FS_TMP_SUFFIX_LEN]; ///< Temp path.
+
 /* 5. Forward declarations */
 static sas_status_t check_free_space_margin(size_t additional_bytes);
 static bool path_exists(const char *path, bool *out_is_dir);
+static void ensure_parent_dirs(const char *path);
 
 /* 6. Public functions */
 
@@ -248,9 +257,10 @@ sas_status_t sas_fs_write(const char *path, const uint8_t *data, size_t len)
         return status;
     }
 
-    char tmp_path[128];
+    char tmp_path[SAS_FS_PATH_MAX_LEN + SAS_FS_TMP_SUFFIX_LEN];
     (void)snprintf(tmp_path, sizeof(tmp_path), "%s%s", path, SAS_FS_TMP_SUFFIX);
 
+    ensure_parent_dirs(path);
     FILE *f = fopen(tmp_path, "wb");
     if (f == NULL)
     {
@@ -277,6 +287,134 @@ sas_status_t sas_fs_write(const char *path, const uint8_t *data, size_t len)
 
     xSemaphoreGive(s_path_lock);
     return SAS_STATUS_OK;
+}
+
+sas_status_t sas_fs_write_begin(const char *path, size_t expected_len)
+{
+    if ((path == NULL) || (strlen(path) >= SAS_FS_PATH_MAX_LEN))
+    {
+        return SAS_ERR_INVALID_ARG;
+    }
+
+    if (xSemaphoreTake(s_path_lock, SAS_FS_LOCK_WAIT_TICKS) != pdTRUE)
+    {
+        return SAS_ERR_TIMEOUT;
+    }
+
+    sas_status_t status = SAS_STATUS_OK;
+    if (s_stream_file != NULL)
+    {
+        status = SAS_ERR_INVALID_STATE;
+    }
+    else
+    {
+        status = check_free_space_margin(expected_len);
+    }
+
+    if (status == SAS_STATUS_OK)
+    {
+        (void)snprintf(s_stream_path, sizeof(s_stream_path), "%s", path);
+        (void)snprintf(s_stream_tmp_path, sizeof(s_stream_tmp_path), "%s%s", path,
+                       SAS_FS_TMP_SUFFIX);
+
+        ensure_parent_dirs(path);
+        s_stream_file = fopen(s_stream_tmp_path, "wb");
+        if (s_stream_file == NULL)
+        {
+            status = SAS_FS_ERR_NO_SPACE;
+        }
+    }
+
+    xSemaphoreGive(s_path_lock);
+    return status;
+}
+
+sas_status_t sas_fs_write_append(const uint8_t *data, size_t len)
+{
+    if (data == NULL)
+    {
+        return SAS_ERR_INVALID_ARG;
+    }
+
+    if (xSemaphoreTake(s_path_lock, SAS_FS_LOCK_WAIT_TICKS) != pdTRUE)
+    {
+        return SAS_ERR_TIMEOUT;
+    }
+
+    sas_status_t status = SAS_STATUS_OK;
+    if (s_stream_file == NULL)
+    {
+        status = SAS_ERR_INVALID_STATE;
+    }
+    else
+    {
+        status = check_free_space_margin(len);
+        if ((status == SAS_STATUS_OK) && (fwrite(data, 1U, len, s_stream_file) != len))
+        {
+            status = SAS_FS_ERR_NO_SPACE;
+        }
+        if (status != SAS_STATUS_OK)
+        {
+            /* Out of space mid-stream: drop the partial temp file so it cannot linger. */
+            (void)fclose(s_stream_file);
+            s_stream_file = NULL;
+            (void)unlink(s_stream_tmp_path);
+            status = SAS_FS_ERR_NO_SPACE;
+        }
+    }
+
+    xSemaphoreGive(s_path_lock);
+    return status;
+}
+
+sas_status_t sas_fs_write_commit(void)
+{
+    if (xSemaphoreTake(s_path_lock, SAS_FS_LOCK_WAIT_TICKS) != pdTRUE)
+    {
+        return SAS_ERR_TIMEOUT;
+    }
+
+    sas_status_t status = SAS_STATUS_OK;
+    if (s_stream_file == NULL)
+    {
+        status = SAS_ERR_INVALID_STATE;
+    }
+    else
+    {
+        int close_result = fclose(s_stream_file);
+        s_stream_file = NULL;
+        if ((close_result != 0) || (rename(s_stream_tmp_path, s_stream_path) != 0))
+        {
+            (void)unlink(s_stream_tmp_path);
+            status = SAS_FS_ERR_NO_SPACE;
+        }
+    }
+
+    xSemaphoreGive(s_path_lock);
+    return status;
+}
+
+sas_status_t sas_fs_write_abort(void)
+{
+    if (xSemaphoreTake(s_path_lock, SAS_FS_LOCK_WAIT_TICKS) != pdTRUE)
+    {
+        return SAS_ERR_TIMEOUT;
+    }
+
+    sas_status_t status = SAS_STATUS_OK;
+    if (s_stream_file == NULL)
+    {
+        status = SAS_ERR_INVALID_STATE;
+    }
+    else
+    {
+        (void)fclose(s_stream_file);
+        s_stream_file = NULL;
+        (void)unlink(s_stream_tmp_path);
+    }
+
+    xSemaphoreGive(s_path_lock);
+    return status;
 }
 
 sas_status_t sas_fs_delete(const char *path)
@@ -389,4 +527,31 @@ static bool path_exists(const char *path, bool *out_is_dir)
     }
     *out_is_dir = S_ISDIR(st.st_mode);
     return true;
+}
+
+/*! \brief Create every missing directory between the mount point and path's final component
+ * (mkdir -p on the parent). Failures are left for the caller's fopen() to surface. */
+static void ensure_parent_dirs(const char *path)
+{
+    char dir[SAS_FS_PATH_MAX_LEN];
+    size_t len = strlen(path);
+    if (len >= sizeof(dir))
+    {
+        return;
+    }
+    (void)memcpy(dir, path, len + 1U);
+
+    /* Skip the mount point itself, then create one component at a time. */
+    for (size_t i = strlen(SAS_FS_MOUNT_POINT) + 1U; i < len; i++)
+    {
+        if (dir[i] == '/')
+        {
+            dir[i] = '\0';
+            if ((mkdir(dir, 0775) != 0) && (errno != EEXIST))
+            {
+                return;
+            }
+            dir[i] = '/';
+        }
+    }
 }

@@ -56,21 +56,13 @@
 #define SAS_BOOT_IDX_AUTH (12U)
 
 /* 3. Private typedefs */
-
-/*! Per-module boot outcome; extends System Information. */
-typedef enum {
-    SAS_BOOT_STATUS_OK = 0,
-    SAS_BOOT_STATUS_FAILED,
-    SAS_BOOT_STATUS_SKIPPED_DEPENDENCY,
-} sas_boot_status_t;
-
-/*! One boot-sequence record. */
-typedef struct {
-    const char *module_name;  ///< Module name, e.g. "logger".
-    sas_boot_status_t status; ///< Outcome recorded for this module.
-} sas_boot_record_t;
+/* (none: sas_boot_status_t / sas_boot_record_t are System Information's, see sas_sysinfo.h) */
 
 /* 4. Private variables */
+static const char *TAG = "sas_boot";
+
+/* Indexed by SAS_BOOT_IDX_x for dependencies_met(); each entry is also handed to System
+ * Information, which serves the report (sas_sysinfo_get_boot_status()). */
 static sas_boot_record_t s_boot_status[SAS_BOOT_MODULE_COUNT];
 
 /* 5. Forward declarations */
@@ -85,19 +77,10 @@ void app_main(void)
     uint8_t idx = 0U;
     sas_status_t status;
 
-    /* This block calls each module's real init()/start() pair in
-     * Development Order, gated by dependencies_met() for every module that
-     * documents a dependency on an earlier one, and records the outcome
-     * via record_boot_status()/record_boot_skipped(). Auth, OTA Manager,
-     * Terminal, and System Information remain stubs (SAS_ERR_NOT_SUPPORTED)
-     * as of this change - out of scope for the Wi-Fi/BLE/log dashboard
-     * feature - so they still record SAS_BOOT_STATUS_FAILED whenever their
-     * own dependencies are met.
-     *
-     * TODO: expose s_boot_status through an extension of System Information
-     * (sas_sysinfo_get_boot_status(), see the TODO in
-     * main/src/core/sas_sysinfo.h) once that out-parameter shape is
-     * finalized. */
+    /* Each module's init()/start() pair is called in Development Order, gated by
+     * dependencies_met() for every module that documents a dependency on an earlier one. The
+     * outcome is recorded via record_boot_status()/record_boot_skipped(), which log it and
+     * pass it to System Information for GET /api/v1/system/boot-status. */
 
     /* 1. Logger */
     {
@@ -141,6 +124,18 @@ void app_main(void)
     }
     record_boot_status(idx++, "file_manager", status);
 
+    /* Configuration Manager started before the filesystem was mounted (Development Order), so
+     * its backing file could not be read then; load it now, ahead of every module that reads a
+     * configuration key in its own init(). A missing file (first boot) just leaves the
+     * compiled-in defaults in place. */
+    if (status == SAS_STATUS_OK) {
+        if (sas_config_reload() == SAS_STATUS_OK) {
+            sas_log_info("configuration loaded from the filesystem");
+        } else {
+            sas_log_info("no stored configuration; using defaults");
+        }
+    }
+
     /* 6. Wi-Fi Manager */
     status = sas_wifi_init();
     if (status == SAS_STATUS_OK) {
@@ -163,16 +158,15 @@ void app_main(void)
         idx++;
     }
 
-    /* 8. REST API (depends on: HTTP Server, Wi-Fi Manager, Logger - the endpoints this build
-     * actually registers; Sysinfo/Config/Files/OTA/Auth from sas_rest_api.h's full dependency
-     * list back endpoint groups this build does not register, so they are deliberately not
-     * gated here - see sas_rest_api.c's file header. BLE Scanner backs /api/v1/ble/devices but
-     * boots after REST API in this sequence, so it cannot be checked here either; that is fine,
-     * since sas_rest_api_start() itself never calls into BLE Scanner - only a later HTTP
-     * request's handler does, by which point BLE Scanner has already booted.) */
+    /* 8. REST API (depends on: HTTP Server, plus the already-booted modules backing its
+     * endpoint groups. BLE Scanner, OTA Manager and Authentication back endpoint groups too
+     * but boot after REST API in this sequence, so they cannot be checked here; that is fine,
+     * since sas_rest_api_start() itself never calls into them - only a later HTTP request's
+     * handler does, by which point they have booted.) */
     {
         static const uint8_t deps[] = {SAS_BOOT_IDX_HTTP_SERVER, SAS_BOOT_IDX_WIFI_MANAGER,
-                                       SAS_BOOT_IDX_LOGGER};
+                                       SAS_BOOT_IDX_LOGGER,      SAS_BOOT_IDX_CONFIG,
+                                       SAS_BOOT_IDX_SYSINFO,     SAS_BOOT_IDX_FILE_MANAGER};
         if (dependencies_met(deps, sizeof(deps) / sizeof(deps[0]))) {
             status = sas_rest_api_init();
             if (status == SAS_STATUS_OK) {
@@ -185,9 +179,10 @@ void app_main(void)
         idx++;
     }
 
-    /* 9. WebSocket (depends on: HTTP Server, Event Bus - sas_websocket.h) */
+    /* 9. WebSocket (depends on: HTTP Server, Event Bus, System Information - sas_websocket.h) */
     {
-        static const uint8_t deps[] = {SAS_BOOT_IDX_HTTP_SERVER, SAS_BOOT_IDX_EVENT_BUS};
+        static const uint8_t deps[] = {SAS_BOOT_IDX_HTTP_SERVER, SAS_BOOT_IDX_EVENT_BUS,
+                                       SAS_BOOT_IDX_SYSINFO};
         if (dependencies_met(deps, sizeof(deps) / sizeof(deps[0]))) {
             status = sas_ws_init();
             if (status == SAS_STATUS_OK) {
@@ -225,10 +220,12 @@ void app_main(void)
         idx++;
     }
 
-    /* 13. Terminal (depends on: WebSocket - sas_terminal.h; its Event Bus dependency is
-     * documented there as "not yet included", so not gated here) */
+    /* 13. Terminal (depends on: WebSocket, and System Information / Wi-Fi Manager for its
+     * built-in commands - sas_terminal.h; its Event Bus dependency is documented there as "not
+     * yet included", so not gated here) */
     {
-        static const uint8_t deps[] = {SAS_BOOT_IDX_WEBSOCKET};
+        static const uint8_t deps[] = {SAS_BOOT_IDX_WEBSOCKET, SAS_BOOT_IDX_SYSINFO,
+                                       SAS_BOOT_IDX_WIFI_MANAGER};
         if (dependencies_met(deps, sizeof(deps) / sizeof(deps[0]))) {
             status = sas_terminal_init();
             if (status == SAS_STATUS_OK) {
@@ -257,6 +254,8 @@ void app_main(void)
         }
         idx++;
     }
+
+    sas_log_info("boot sequence complete");
 }
 
 /* 7. Private functions */
@@ -273,6 +272,12 @@ static void record_boot_status(uint8_t index, const char *name, sas_status_t sta
     s_boot_status[index].module_name = name;
     s_boot_status[index].status =
         (status == SAS_STATUS_OK) ? SAS_BOOT_STATUS_OK : SAS_BOOT_STATUS_FAILED;
+    (void)sas_sysinfo_record_boot_status(name, s_boot_status[index].status);
+
+    /* SAS-INT-FR-002: a failed module is logged and the sequence carries on. */
+    if (status != SAS_STATUS_OK) {
+        sas_log_error("module '%s' failed to boot (0x%x)", name, (unsigned int)status);
+    }
 }
 
 /*!
@@ -287,6 +292,8 @@ static void record_boot_skipped(uint8_t index, const char *name)
 
     s_boot_status[index].module_name = name;
     s_boot_status[index].status = SAS_BOOT_STATUS_SKIPPED_DEPENDENCY;
+    (void)sas_sysinfo_record_boot_status(name, SAS_BOOT_STATUS_SKIPPED_DEPENDENCY);
+    sas_log_warn("module '%s' skipped: a dependency did not boot", name);
 }
 
 /*!

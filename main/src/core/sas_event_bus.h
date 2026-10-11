@@ -79,7 +79,7 @@ typedef enum {
     SAS_EVENT_WIFI_STATE_CHANGED,
 
     /* OTA Manager */
-    SAS_EVENT_OTA_PROGRESS,
+    SAS_EVENT_OTA_PROGRESS, ///< Payload is a sas_ota_progress_t (sas_ota_manager.h).
 
     /* BLE Manager */
     SAS_EVENT_BLE_DEVICE_DISCOVERED,
@@ -88,6 +88,10 @@ typedef enum {
     SAS_EVENT_LOG_ENTRY, ///< Published by sas_log_emit_*() for each entry accepted past the
                          ///< level filter; payload is a sas_log_entry_t (sas_logger.h).
 
+    /* Authentication; none of these carry a payload (never the token or credential). */
+    SAS_EVENT_AUTH_LOGIN,   ///< A login succeeded and a session token was issued.
+    SAS_EVENT_AUTH_LOGOUT,  ///< A session was ended by sas_auth_logout().
+    SAS_EVENT_AUTH_LOCKOUT, ///< A login attempt was rejected by failed-login throttling.
     /* Additional SAS_EVENT_* constants are appended here by each owning
      * module as it is implemented. */
 } sas_event_id_t;

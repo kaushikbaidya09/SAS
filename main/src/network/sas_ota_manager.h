@@ -42,6 +42,8 @@
     Update state machine:
 
     IDLE --begin_from_upload()/begin_from_url()--> RECEIVING
+    FAILED --begin_from_upload()/begin_from_url()--> RECEIVING (retry)
+    RECEIVING --write error/abort()--> FAILED
     RECEIVING --transfer complete--> VERIFYING
     VERIFYING --checksum/signature OK--> READY_TO_REBOOT
     VERIFYING --checksum/signature FAIL--> FAILED (partition discarded, current
@@ -83,12 +85,19 @@ typedef struct {
 
 /*!
     \brief   Initialize the OTA Manager module.
-    \return  SAS_STATUS_OK on success.
+    \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_STATE if already
+             initialized.
 */
 sas_status_t sas_ota_init(void);
 
 /*!
-    \brief   Start active OTA Manager operation.
+    \brief   Start active OTA Manager operation. If the running image was
+             just installed by OTA and is still pending verification, this
+             is where it confirms itself
+             (esp_ota_mark_app_valid_cancel_rollback()): reaching this call
+             means the image booted through every earlier module. An image
+             that resets before getting here is rolled back by the
+             bootloader (requires CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE).
     \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_STATE if not initialized.
 */
 sas_status_t sas_ota_start(void);
@@ -113,8 +122,8 @@ sas_status_t sas_ota_deinit(void);
              a Content-Length header), used only for the pre-write size
              check below.
     \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_STATE if not started
-             or not in the IDLE state; SAS_OTA_ERR_IMAGE_TOO_LARGE if
-             total_size_hint exceeds the inactive partition size, checked
+             or not in the IDLE or FAILED state; SAS_OTA_ERR_IMAGE_TOO_LARGE
+             if total_size_hint exceeds the inactive partition size, checked
              before esp_ota_begin() is called.
 */
 sas_status_t sas_ota_begin_from_upload(size_t total_size_hint);
@@ -124,7 +133,11 @@ sas_status_t sas_ota_begin_from_upload(size_t total_size_hint);
     \param   data Non-NULL chunk buffer.
     \param   len  Length of data in bytes.
     \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_ARG if data is
-             NULL; SAS_ERR_INVALID_STATE if not in the RECEIVING state.
+             NULL; SAS_ERR_INVALID_STATE if not in the RECEIVING state;
+             SAS_OTA_ERR_IMAGE_TOO_LARGE if the data would overrun the
+             inactive partition, or SAS_OTA_ERR_VERIFY_FAILED if the flash
+             write is rejected (e.g. not a valid application image) - in
+             both cases the update is aborted and the state moves to FAILED.
 */
 sas_status_t sas_ota_write_chunk(const uint8_t *data, size_t len);
 
@@ -146,9 +159,12 @@ sas_status_t sas_ota_finish(void);
              via the HTTP client, transitioning IDLE -> RECEIVING and
              driving the update to completion internally.
     \param   url Non-NULL image URL.
+    \note    Blocks the calling task for the whole download; call it from a
+             task that can afford that, not from the HTTP Server's task.
     \return  SAS_STATUS_OK on success (state is READY_TO_REBOOT);
              SAS_ERR_INVALID_ARG if url is NULL; SAS_ERR_INVALID_STATE if
-             not started or not in the IDLE state;
+             not started or not in the IDLE or FAILED state;
+             SAS_ERR_TIMEOUT if the download fails or stalls;
              SAS_OTA_ERR_IMAGE_TOO_LARGE if the reported image size
              exceeds the inactive partition size, checked before any
              flash write begins; SAS_OTA_ERR_VERIFY_FAILED if
@@ -161,3 +177,20 @@ sas_status_t sas_ota_begin_from_url(const char *url);
     \return  Current sas_ota_state_t.
 */
 sas_ota_state_t sas_ota_get_state(void);
+
+/*!
+    \brief   Abandon an update that is in the RECEIVING state (e.g. the
+             uploading client disconnected), discarding what was written and
+             moving the state to FAILED. The current boot partition is
+             untouched.
+    \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_STATE if not in the
+             RECEIVING state.
+*/
+sas_status_t sas_ota_abort(void);
+
+/*!
+    \brief   Get the latest progress snapshot (state and percent complete).
+    \param   out Non-NULL destination.
+    \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_ARG if out is NULL.
+*/
+sas_status_t sas_ota_get_progress(sas_ota_progress_t *out);

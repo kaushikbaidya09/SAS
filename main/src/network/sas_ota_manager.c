@@ -1,67 +1,92 @@
 /*!
     \file    sas_ota_manager.c
-    \brief   Implementation skeleton for the OTA Manager module.
+    \brief   Implementation of the OTA Manager module.
 
     \description
-    See sas_ota_manager.h for the public contract. This file currently
-    contains only the lifecycle and update-flow API stubs; behaviour is
-    filled in per module during implementation, in Development Order.
+    See sas_ota_manager.h for the public contract and state machine. Layers
+    the sas_ota_* API over ESP-IDF's esp_ota_* family; image verification is
+    the check esp_ota_end() performs (image header, size, SHA-256, and the
+    signature when Secure Boot is configured).
 
     \dependencies
-    - File Manager (main/src/storage/sas_file_manager.h): optional, only
-      if a firmware image is staged to the local filesystem ahead of
-      installation.
     - HTTP client (ESP-IDF esp_http_client component): used by
       sas_ota_begin_from_url().
-    - System Information (main/src/core/sas_sysinfo.h): inactive-partition
-      size check ahead of esp_ota_begin().
     - Event Bus (main/src/core/sas_event_bus.h): publishes
-      SAS_EVENT_OTA_PROGRESS on every state transition.
+      SAS_EVENT_OTA_PROGRESS on every state transition and on every whole
+      percent of transfer progress.
 */
 
 /* 1. Includes */
 #include "sas_ota_manager.h"
 
 #include <stdbool.h>
+#include <string.h>
+
+#include "esp_crt_bundle.h"
+#include "esp_http_client.h"
+#include "esp_ota_ops.h"
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+
+#include "../core/sas_event_bus.h"
+#include "../core/sas_logger.h"
+
+static const char *TAG = "sas_ota";
 
 /* 2. Private macros */
-
-/*
- * Configuration Keys (Configuration Manager, not yet wired at skeleton
- * stage):
- * - ota.confirm_timeout_ms: window after booting a new image within which it
- *   must call esp_ota_mark_app_valid_cancel_rollback() to avoid a
- *   watchdog-triggered rollback to the previous partition (the
- *   SAS_OTA_CONFIRM_TIMEOUT_MS referenced in the state machine in
- *   sas_ota_manager.h).
- */
+#define SAS_OTA_LOCK_WAIT_TICKS                                                                    \
+    pdMS_TO_TICKS(5000) ///< Bounded wait for s_lock; a holder may be inside a flash erase/write.
+#define SAS_OTA_URL_READ_CHUNK (1024U)    ///< Chunk size streaming an image from the HTTP client.
+#define SAS_OTA_URL_TIMEOUT_MS (10000)    ///< HTTP client network timeout for begin_from_url().
 
 /* 3. Private typedefs */
-/* (none yet: the esp_ota_handle_t, running write offset, target partition
- * pointer, and tracked sas_ota_state_t are to be added during
- * implementation) */
+/* (none) */
 
 /* 4. Private variables */
 static bool s_initialized = false;
 static bool s_started = false;
 
+static SemaphoreHandle_t s_lock = NULL; ///< Guards every variable below.
+static StaticSemaphore_t s_lock_storage;
+
+static sas_ota_state_t s_state = SAS_OTA_STATE_IDLE;
+static uint8_t s_percent = 0U;
+static esp_ota_handle_t s_handle = 0;
+static const esp_partition_t *s_target = NULL; ///< Inactive partition being written.
+static size_t s_total_size = 0U;               ///< Expected image size; 0 if unknown.
+static size_t s_written = 0U;                  ///< Bytes written so far.
+
+static uint8_t s_url_chunk[SAS_OTA_URL_READ_CHUNK]; ///< begin_from_url() read buffer.
+
 /* 5. Forward declarations */
-/* Marked unused until the state-changing functions below are implemented and
- * call it. */
-static void publish_progress(sas_ota_state_t state, uint8_t percent_complete)
-    __attribute__((unused));
+static void publish_progress(sas_ota_state_t state, uint8_t percent_complete);
+static void set_state_locked(sas_ota_state_t state, uint8_t percent_complete);
+static sas_status_t begin_locked(size_t total_size_hint);
+static void fail_locked(void);
+static void confirm_running_image(void);
 
 /* 6. Public functions */
 
 sas_status_t sas_ota_init(void)
 {
-    /* TODO:
-     * 1. Initialize internal state (esp_ota_handle_t, write offset, target
-     *    partition pointer, tracked state) to their idle values.
-     * 2. Do not make any esp_ota_* calls here; those begin in
-     *    sas_ota_begin_from_upload()/sas_ota_begin_from_url(). */
+    if (s_initialized) {
+        return SAS_ERR_INVALID_STATE;
+    }
+
+    s_lock = xSemaphoreCreateMutexStatic(&s_lock_storage);
+    configASSERT(s_lock != NULL);
+
+    s_state = SAS_OTA_STATE_IDLE;
+    s_percent = 0U;
+    s_handle = 0;
+    s_target = NULL;
+    s_total_size = 0U;
+    s_written = 0U;
+
+    s_started = false;
     s_initialized = true;
-    return SAS_ERR_NOT_SUPPORTED;
+    return SAS_STATUS_OK;
 }
 
 sas_status_t sas_ota_start(void)
@@ -70,11 +95,10 @@ sas_status_t sas_ota_start(void)
         return SAS_ERR_INVALID_STATE;
     }
 
-    /* TODO:
-     * 1. Mark the module ready to accept begin_from_upload()/
-     *    begin_from_url() calls. */
+    confirm_running_image();
+
     s_started = true;
-    return SAS_ERR_NOT_SUPPORTED;
+    return SAS_STATUS_OK;
 }
 
 sas_status_t sas_ota_stop(void)
@@ -83,12 +107,10 @@ sas_status_t sas_ota_stop(void)
         return SAS_ERR_INVALID_STATE;
     }
 
-    /* TODO:
-     * 1. Reject new begin_from_upload()/begin_from_url() calls.
-     * 2. Do not discard state acquired by sas_ota_init(); an update
-     *    already in progress is left to complete or fail on its own. */
+    /* Only new begin_*() calls are rejected; an update already in progress is left to
+     * complete or fail on its own. */
     s_started = false;
-    return SAS_ERR_NOT_SUPPORTED;
+    return SAS_STATUS_OK;
 }
 
 sas_status_t sas_ota_deinit(void)
@@ -97,11 +119,15 @@ sas_status_t sas_ota_deinit(void)
         return SAS_ERR_INVALID_STATE;
     }
 
-    /* TODO:
-     * 1. Release any resources acquired in sas_ota_init().
-     * 2. Reset module state to uninitialized. */
+    (void)sas_ota_abort();
+    if (s_lock != NULL) {
+        vSemaphoreDelete(s_lock);
+        s_lock = NULL;
+    }
+
+    s_started = false;
     s_initialized = false;
-    return SAS_ERR_NOT_SUPPORTED;
+    return SAS_STATUS_OK;
 }
 
 sas_status_t sas_ota_begin_from_upload(size_t total_size_hint)
@@ -109,18 +135,14 @@ sas_status_t sas_ota_begin_from_upload(size_t total_size_hint)
     if (!s_started) {
         return SAS_ERR_INVALID_STATE;
     }
+    if (xSemaphoreTake(s_lock, SAS_OTA_LOCK_WAIT_TICKS) != pdTRUE) {
+        return SAS_ERR_TIMEOUT;
+    }
 
-    (void)total_size_hint;
-    /* TODO:
-     * 1. Reject if the tracked state is not IDLE.
-     * 2. Compare total_size_hint against the inactive partition size (via
-     *    esp_ota_get_next_update_partition()).
-     * 3. Return SAS_OTA_ERR_IMAGE_TOO_LARGE *before* calling esp_ota_begin()
-     *    if it does not fit.
-     * 4. On success, call esp_ota_begin(), store the returned handle and
-     *    target partition, transition IDLE -> RECEIVING, and call
-     *    publish_progress(SAS_OTA_STATE_RECEIVING, 0). */
-    return SAS_ERR_NOT_SUPPORTED;
+    sas_status_t status = begin_locked(total_size_hint);
+
+    xSemaphoreGive(s_lock);
+    return status;
 }
 
 sas_status_t sas_ota_write_chunk(const uint8_t *data, size_t len)
@@ -128,42 +150,75 @@ sas_status_t sas_ota_write_chunk(const uint8_t *data, size_t len)
     if (data == NULL) {
         return SAS_ERR_INVALID_ARG;
     }
-    if (!s_started) {
+    if (!s_initialized) {
         return SAS_ERR_INVALID_STATE;
     }
+    if (xSemaphoreTake(s_lock, SAS_OTA_LOCK_WAIT_TICKS) != pdTRUE) {
+        return SAS_ERR_TIMEOUT;
+    }
 
-    (void)len;
-    /* TODO:
-     * 1. Reject if the tracked state is not RECEIVING.
-     * 2. Call esp_ota_write(handle, data, len) and advance the running
-     *    write offset.
-     * 3. Call publish_progress(SAS_OTA_STATE_RECEIVING, percent) with
-     *    percent derived from the offset against total_size_hint. */
-    return SAS_ERR_NOT_SUPPORTED;
+    sas_status_t status = SAS_STATUS_OK;
+    if (s_state != SAS_OTA_STATE_RECEIVING) {
+        status = SAS_ERR_INVALID_STATE;
+    } else if ((s_written + len) > s_target->size) {
+        /* The size hint was absent or understated: stop before overrunning the partition. */
+        fail_locked();
+        status = SAS_OTA_ERR_IMAGE_TOO_LARGE;
+    } else if (esp_ota_write(s_handle, data, len) != ESP_OK) {
+        fail_locked();
+        status = SAS_OTA_ERR_VERIFY_FAILED;
+    } else {
+        s_written += len;
+        if (s_total_size > 0U) {
+            /* Hold at 99 until finish() has verified the image. */
+            uint32_t percent = (uint32_t)(((uint64_t)s_written * 100U) / s_total_size);
+            if (percent > 99U) {
+                percent = 99U;
+            }
+            if ((uint8_t)percent != s_percent) {
+                set_state_locked(SAS_OTA_STATE_RECEIVING, (uint8_t)percent);
+            }
+        }
+    }
+
+    xSemaphoreGive(s_lock);
+    return status;
 }
 
 sas_status_t sas_ota_finish(void)
 {
-    if (!s_started) {
+    if (!s_initialized) {
         return SAS_ERR_INVALID_STATE;
     }
+    if (xSemaphoreTake(s_lock, SAS_OTA_LOCK_WAIT_TICKS) != pdTRUE) {
+        return SAS_ERR_TIMEOUT;
+    }
 
-    /* TODO:
-     * 1. Reject if the tracked state is not RECEIVING.
-     * 2. Transition to VERIFYING and call esp_ota_end(), which performs
-     *    the size and SHA-256/signature check under the project's secure
-     *    boot / flash encryption configuration (not re-implemented here).
-     * 3. On failure: transition to FAILED, call
-     *    publish_progress(SAS_OTA_STATE_FAILED, ...), leave the current
-     *    boot partition untouched, and return SAS_OTA_ERR_VERIFY_FAILED.
-     * 4. On success: call esp_ota_set_boot_partition(), transition to
-     *    READY_TO_REBOOT, and call
-     *    publish_progress(SAS_OTA_STATE_READY_TO_REBOOT, 100).
-     * Note: the actual reboot and the SAS_OTA_CONFIRM_TIMEOUT_MS
-     * self-confirm window (esp_ota_mark_app_valid_cancel_rollback()) happen
-     * after reboot and are outside this function; see the state machine in
-     * sas_ota_manager.h. */
-    return SAS_ERR_NOT_SUPPORTED;
+    sas_status_t status = SAS_STATUS_OK;
+    if (s_state != SAS_OTA_STATE_RECEIVING) {
+        status = SAS_ERR_INVALID_STATE;
+    } else {
+        set_state_locked(SAS_OTA_STATE_VERIFYING, 99U);
+
+        /* esp_ota_end() releases the handle whether or not verification passes. */
+        esp_err_t err = esp_ota_end(s_handle);
+        s_handle = 0;
+        if (err == ESP_OK) {
+            err = esp_ota_set_boot_partition(s_target);
+        }
+
+        if (err != ESP_OK) {
+            sas_log_error("image verification failed (0x%x)", (unsigned int)err);
+            set_state_locked(SAS_OTA_STATE_FAILED, 0U);
+            status = SAS_OTA_ERR_VERIFY_FAILED;
+        } else {
+            sas_log_info("image verified; next boot is partition '%s'", s_target->label);
+            set_state_locked(SAS_OTA_STATE_READY_TO_REBOOT, 100U);
+        }
+    }
+
+    xSemaphoreGive(s_lock);
+    return status;
 }
 
 sas_status_t sas_ota_begin_from_url(const char *url)
@@ -175,43 +230,201 @@ sas_status_t sas_ota_begin_from_url(const char *url)
         return SAS_ERR_INVALID_STATE;
     }
 
-    /* TODO:
-     * 1. Reject if the tracked state is not IDLE.
-     * 2. Open an HTTP(S) connection to url and read the reported content
-     *    length.
-     * 3. Return SAS_OTA_ERR_IMAGE_TOO_LARGE before any esp_ota_begin() call
-     *    if it exceeds the inactive partition size.
-     * 4. Otherwise drive the same RECEIVING -> VERIFYING ->
-     *    READY_TO_REBOOT/FAILED sequence as sas_ota_begin_from_upload()/
-     *    sas_ota_write_chunk()/sas_ota_finish(), streaming chunks from the
-     *    HTTP response instead of the caller, and calling
-     *    publish_progress() on each transition. */
-    return SAS_ERR_NOT_SUPPORTED;
+    /* Reject up front so a busy module costs no network round-trip; begin_locked() below
+     * re-checks under the same lock once the size is known. */
+    sas_ota_state_t state = sas_ota_get_state();
+    if ((state != SAS_OTA_STATE_IDLE) && (state != SAS_OTA_STATE_FAILED)) {
+        return SAS_ERR_INVALID_STATE;
+    }
+
+    esp_http_client_config_t config = {
+        .url = url,
+        .timeout_ms = SAS_OTA_URL_TIMEOUT_MS,
+        .crt_bundle_attach = esp_crt_bundle_attach,
+        .keep_alive_enable = true,
+    };
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    if (client == NULL) {
+        return SAS_ERR_INVALID_ARG;
+    }
+
+    sas_status_t status = SAS_STATUS_OK;
+    bool began = false;
+
+    if (esp_http_client_open(client, 0) != ESP_OK) {
+        sas_log_error("could not connect to the image URL");
+        status = SAS_ERR_TIMEOUT;
+    }
+
+    if (status == SAS_STATUS_OK) {
+        int64_t content_length = esp_http_client_fetch_headers(client);
+        int http_status = esp_http_client_get_status_code(client);
+        if ((content_length < 0) || (http_status != 200)) {
+            sas_log_error("image URL answered HTTP %d", http_status);
+            status = SAS_ERR_TIMEOUT;
+        } else {
+            /* content_length is 0 for a chunked response: size unknown, checked per chunk. */
+            status = sas_ota_begin_from_upload((size_t)content_length);
+            began = (status == SAS_STATUS_OK);
+        }
+    }
+
+    while (status == SAS_STATUS_OK) {
+        int read_len = esp_http_client_read(client, (char *)s_url_chunk, sizeof(s_url_chunk));
+        if (read_len < 0) {
+            status = SAS_ERR_TIMEOUT;
+        } else if (read_len == 0) {
+            if (!esp_http_client_is_complete_data_received(client)) {
+                status = SAS_ERR_TIMEOUT; /* connection dropped mid-image */
+            }
+            break;
+        } else {
+            status = sas_ota_write_chunk(s_url_chunk, (size_t)read_len);
+        }
+    }
+
+    (void)esp_http_client_close(client);
+    (void)esp_http_client_cleanup(client);
+
+    if (status == SAS_STATUS_OK) {
+        status = sas_ota_finish();
+    } else if (began) {
+        (void)sas_ota_abort(); /* no-op if write_chunk() already moved the state to FAILED */
+    } else {
+        /* Never reached RECEIVING: report the failure without having touched flash. */
+        if (xSemaphoreTake(s_lock, SAS_OTA_LOCK_WAIT_TICKS) == pdTRUE) {
+            if ((s_state == SAS_OTA_STATE_IDLE) || (s_state == SAS_OTA_STATE_FAILED)) {
+                set_state_locked(SAS_OTA_STATE_FAILED, 0U);
+            }
+            xSemaphoreGive(s_lock);
+        }
+    }
+    return status;
+}
+
+sas_status_t sas_ota_abort(void)
+{
+    if (!s_initialized) {
+        return SAS_ERR_INVALID_STATE;
+    }
+    if (xSemaphoreTake(s_lock, SAS_OTA_LOCK_WAIT_TICKS) != pdTRUE) {
+        return SAS_ERR_TIMEOUT;
+    }
+
+    sas_status_t status = SAS_STATUS_OK;
+    if (s_state != SAS_OTA_STATE_RECEIVING) {
+        status = SAS_ERR_INVALID_STATE;
+    } else {
+        fail_locked();
+    }
+
+    xSemaphoreGive(s_lock);
+    return status;
 }
 
 sas_ota_state_t sas_ota_get_state(void)
 {
-    /* TODO:
-     * 1. Return the tracked static OTA state (to be added alongside the
-     *    esp_ota_handle_t and set by every transition in the functions
-     *    above); SAS_OTA_STATE_IDLE is the safe default until implemented. */
-    return SAS_OTA_STATE_IDLE;
+    sas_ota_progress_t progress = {.percent_complete = 0U, .state = SAS_OTA_STATE_IDLE};
+    (void)sas_ota_get_progress(&progress);
+    return progress.state;
+}
+
+sas_status_t sas_ota_get_progress(sas_ota_progress_t *out)
+{
+    if (out == NULL) {
+        return SAS_ERR_INVALID_ARG;
+    }
+
+    out->state = SAS_OTA_STATE_IDLE;
+    out->percent_complete = 0U;
+    if (s_initialized && (xSemaphoreTake(s_lock, SAS_OTA_LOCK_WAIT_TICKS) == pdTRUE)) {
+        out->state = s_state;
+        out->percent_complete = s_percent;
+        xSemaphoreGive(s_lock);
+    }
+    return SAS_STATUS_OK;
 }
 
 /* 7. Private functions */
 
 /*!
     \brief   Publish a SAS_EVENT_OTA_PROGRESS event for one state
-             transition; the single entry point used by all
-             state-changing functions above.
+             transition or progress step.
 */
 static void publish_progress(sas_ota_state_t state, uint8_t percent_complete)
 {
-    (void)state;
-    (void)percent_complete;
+    const sas_ota_progress_t progress = {
+        .percent_complete = percent_complete,
+        .state = state,
+    };
+    (void)sas_event_bus_publish(SAS_EVENT_OTA_PROGRESS, &progress, sizeof(progress));
+}
 
-    /* TODO:
-     * 1. Build a sas_ota_progress_t{percent_complete, state}.
-     * 2. Forward it via sas_event_bus_publish(SAS_EVENT_OTA_PROGRESS,
-     *    &progress, sizeof(progress)). */
+/*! \brief Record state/percent and publish them. Caller holds s_lock; subscribers must not call
+ * back into this module's state-changing API from the callback. */
+static void set_state_locked(sas_ota_state_t state, uint8_t percent_complete)
+{
+    s_state = state;
+    s_percent = percent_complete;
+    publish_progress(state, percent_complete);
+}
+
+/*! \brief IDLE/FAILED -> RECEIVING: size-check against the inactive partition, then
+ * esp_ota_begin(). Caller holds s_lock. */
+static sas_status_t begin_locked(size_t total_size_hint)
+{
+    if ((s_state != SAS_OTA_STATE_IDLE) && (s_state != SAS_OTA_STATE_FAILED)) {
+        return SAS_ERR_INVALID_STATE;
+    }
+
+    const esp_partition_t *target = esp_ota_get_next_update_partition(NULL);
+    if (target == NULL) {
+        sas_log_error("no inactive OTA partition in the partition table");
+        return SAS_ERR_NOT_SUPPORTED;
+    }
+
+    /* SAS-OTA-NFR-002: reject before any flash write to the inactive partition begins. */
+    if (total_size_hint > target->size) {
+        return SAS_OTA_ERR_IMAGE_TOO_LARGE;
+    }
+
+    /* Sequential-write mode erases as the image arrives instead of erasing the whole partition
+     * up front, which would stall the caller for seconds. */
+    if (esp_ota_begin(target, OTA_WITH_SEQUENTIAL_WRITES, &s_handle) != ESP_OK) {
+        sas_log_error("esp_ota_begin failed on partition '%s'", target->label);
+        return SAS_ERR_INVALID_STATE;
+    }
+
+    s_target = target;
+    s_total_size = total_size_hint;
+    s_written = 0U;
+    sas_log_info("receiving image into partition '%s'", target->label);
+    set_state_locked(SAS_OTA_STATE_RECEIVING, 0U);
+    return SAS_STATUS_OK;
+}
+
+/*! \brief RECEIVING -> FAILED: discard the partial image. The current boot partition is never
+ * touched on this path (SAS-OTA-FR-004). Caller holds s_lock. */
+static void fail_locked(void)
+{
+    (void)esp_ota_abort(s_handle);
+    s_handle = 0;
+    sas_log_warn("update aborted after %u bytes", (unsigned int)s_written);
+    set_state_locked(SAS_OTA_STATE_FAILED, 0U);
+}
+
+/*! \brief If the running image is a freshly installed OTA image awaiting confirmation, mark it
+ * valid so the bootloader stops treating the previous image as the rollback target. */
+static void confirm_running_image(void)
+{
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    esp_ota_img_states_t image_state;
+    if ((running != NULL) && (esp_ota_get_state_partition(running, &image_state) == ESP_OK) &&
+        (image_state == ESP_OTA_IMG_PENDING_VERIFY)) {
+        if (esp_ota_mark_app_valid_cancel_rollback() == ESP_OK) {
+            sas_log_info("new firmware in '%s' confirmed", running->label);
+        } else {
+            sas_log_error("failed to confirm new firmware in '%s'", running->label);
+        }
+    }
 }

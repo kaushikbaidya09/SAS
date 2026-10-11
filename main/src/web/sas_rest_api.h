@@ -63,10 +63,11 @@ typedef struct {
               ///< sibling modules.
 
 #define SAS_API_MAX_BODY_LEN                                                                       \
-    (4096U) ///< Placeholder maximum accepted request body length in bytes, enforced by the shared
-            ///< request-body reader before cJSON_Parse() is invoked. The authoritative value at
-            ///< runtime is the api.max_body_len configuration key (Configuration Manager); this
-            ///< macro is a compile-time fallback.
+    (4096U) ///< Maximum accepted JSON request body length in bytes, enforced by the shared
+            ///< request-body reader before cJSON_Parse() is invoked. The api.max_body_len
+            ///< configuration key can lower this limit at runtime but not raise it (the
+            ///< receive buffer is sized by this macro). Raw file/firmware uploads are streamed
+            ///< and limited separately (api.max_upload_len, the OTA partition size).
 
 /* 6. Public API declarations */
 

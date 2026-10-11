@@ -6,7 +6,8 @@
     Read-only reporting of chip identity, runtime memory/uptime statistics,
     last reset reason, and a point-in-time task snapshot. All getters are
     thin wrappers over ESP-IDF system APIs; the module retains no state
-    beyond an init-time boot timestamp used to compute uptime.
+    beyond an init-time boot timestamp used to compute uptime and the
+    per-module boot status report handed to it by Boot Sequencing.
 
     \dependencies
     (none: System Information is a Layer-1 module with no compile-time
@@ -48,7 +49,23 @@ typedef struct {
     uint32_t stack_high_water_mark;          ///< Minimum remaining stack, in words.
 } sas_task_snapshot_t;
 
+/*! Per-module boot outcome recorded by Boot Sequencing (main/src/main.c). */
+typedef enum {
+    SAS_BOOT_STATUS_OK = 0,
+    SAS_BOOT_STATUS_FAILED,
+    SAS_BOOT_STATUS_SKIPPED_DEPENDENCY,
+} sas_boot_status_t;
+
+/*! One boot-sequence record. */
+typedef struct {
+    const char *module_name;  ///< Module name, e.g. "logger".
+    sas_boot_status_t status; ///< Outcome recorded for this module.
+} sas_boot_record_t;
+
 /* 5. Public constants */
+
+#define SAS_SYSINFO_MAX_BOOT_RECORDS (16U) ///< Capacity of the boot status report.
+#define SAS_SYSINFO_MAX_TASKS (40U) ///< Largest task count sas_sysinfo_get_task_snapshot() handles.
 
 #define SAS_SYSINFO_ERR_BASE (0x8300U) ///< Custom status base for this module.
 #define SAS_SYSINFO_ERR_BUFFER_TOO_SMALL                                                           \
@@ -112,17 +129,36 @@ sas_status_t sas_sysinfo_get_reset_reason(esp_reset_reason_t *out);
                           the number of entries required).
     \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_ARG if out_array or
              out_count is NULL; SAS_SYSINFO_ERR_BUFFER_TOO_SMALL if
-             max_entries is smaller than the active task count.
+             max_entries is smaller than the active task count;
+             SAS_ERR_TIMEOUT if another snapshot is in progress.
 */
 sas_status_t sas_sysinfo_get_task_snapshot(sas_task_snapshot_t *out_array, uint8_t max_entries,
                                            uint8_t *out_count);
 
-/*
- * TODO: sas_sysinfo_get_boot_status() — a Boot Sequencing extension to this
- * module adds a per-stage boot status report, but the shape of the
- * out-parameter (array of stage/status pairs, count, enum values, etc.) is
- * not yet fixed. Declare this function once that shape is finalized; do not
- * guess a signature here.
- *
- * sas_status_t sas_sysinfo_get_boot_status(void);
- */
+/*!
+    \brief   Record one module's boot outcome. Called by Boot Sequencing
+             (main/src/main.c) once per module, in boot order.
+    \note    Usable before sas_sysinfo_init(): Logger and Configuration
+             Manager boot ahead of this module and are recorded too.
+    \param   module_name Non-NULL module name with static storage duration
+                         (stored by pointer, not copied).
+    \param   status      Outcome to record for the module.
+    \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_ARG if module_name is
+             NULL; SAS_ERR_NO_MEM if SAS_SYSINFO_MAX_BOOT_RECORDS entries are
+             already recorded.
+*/
+sas_status_t sas_sysinfo_record_boot_status(const char *module_name, sas_boot_status_t status);
+
+/*!
+    \brief   Get the per-module boot status report, in boot order.
+    \param   out_array    Non-NULL destination array of at least max_entries
+                          elements.
+    \param   max_entries  Capacity of out_array, in elements.
+    \param   out_count    Non-NULL destination for the number of entries
+                          written.
+    \return  SAS_STATUS_OK on success (the report is truncated to
+             max_entries if smaller than the recorded count);
+             SAS_ERR_INVALID_ARG if out_array or out_count is NULL.
+*/
+sas_status_t sas_sysinfo_get_boot_status(sas_boot_record_t *out_array, uint8_t max_entries,
+                                         uint8_t *out_count);

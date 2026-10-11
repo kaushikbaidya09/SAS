@@ -38,6 +38,7 @@
 
 #include "esp_https_server.h"
 
+#include "../auth/sas_auth.h"
 #include "../core/sas_config.h"
 #include "../core/sas_logger.h"
 #include "../storage/sas_file_manager.h"
@@ -45,12 +46,16 @@
 static const char *TAG = "sas_http";
 
 /* 2. Private macros */
-#define SAS_HTTP_MAX_ROUTES (16U)   ///< Static route-table capacity; placeholder sizing.
+#define SAS_HTTP_MAX_ROUTES (40U)   ///< Static route-table capacity; covers the full REST API.
 #define SAS_HTTP_MAX_WS_ROUTES (2U) ///< Static WebSocket-route-table capacity; placeholder sizing.
 #define SAS_HTTP_STATIC_PATH_MAX_LEN \
     (128U)                                 ///< Max length of a File-Manager path built from a request URI in
                                            ///< default_static_handler(), including the "/www" prefix and NUL.
 #define SAS_HTTP_STATIC_READ_CHUNK (2048U) ///< Chunk size streaming a static file to the client.
+#define SAS_HTTP_TASK_STACK_SIZE \
+    (8192U) ///< httpd task stack: handlers run flash writes, HMAC and JSON building on it.
+#define SAS_HTTP_PRIVATE_PATH_PREFIX \
+    "/config" ///< URI prefix never served statically: Configuration Manager's backing store.
 
 /* Embedded self-signed TLS cert/key (main/certs/, EMBED_TXTFILES in
  * main/CMakeLists.txt); symbol names are the file's basename with '.'
@@ -95,6 +100,7 @@ static void load_config(void);
 static const char *content_type_for_path(const char *path);
 static void register_route_with_server(size_t index);
 static void register_ws_route_with_server(size_t index);
+static void remove_fallback(void);
 static void reregister_fallback_last(void);
 
 /* 6. Public functions */
@@ -149,6 +155,8 @@ sas_status_t sas_http_start(void)
         (size_t)(server_key_pem_end - server_key_pem_start);
 
     conf.httpd.max_open_sockets = (uint8_t)s_max_connections;
+    conf.httpd.stack_size = SAS_HTTP_TASK_STACK_SIZE;
+    conf.httpd.lru_purge_enable = true;
     conf.httpd.max_uri_handlers =
         SAS_HTTP_MAX_ROUTES + SAS_HTTP_MAX_WS_ROUTES + 1U;
     conf.httpd.uri_match_fn = httpd_uri_match_wildcard;
@@ -172,6 +180,8 @@ sas_status_t sas_http_start(void)
     httpd_config_t conf = HTTPD_DEFAULT_CONFIG();
 
     conf.max_open_sockets = (uint8_t)s_max_connections;
+    conf.stack_size = SAS_HTTP_TASK_STACK_SIZE;
+    conf.lru_purge_enable = true;
     conf.max_uri_handlers =
         SAS_HTTP_MAX_ROUTES + SAS_HTTP_MAX_WS_ROUTES + 1U;
     conf.uri_match_fn = httpd_uri_match_wildcard;
@@ -216,7 +226,11 @@ sas_status_t sas_http_stop(void)
 
     if (s_server != NULL)
     {
+#if SAS_HTTP_ENABLE_SSL
         (void)httpd_ssl_stop(s_server);
+#else
+        (void)httpd_stop(s_server);
+#endif
         s_server = NULL;
     }
     s_fallback_registered = false;
@@ -269,6 +283,7 @@ sas_status_t sas_http_register_route(const sas_http_route_t *route)
          * main.c): apply immediately rather than only queuing for a batch
          * pass that already ran. httpd_register_uri_handler() is safe to
          * call on a running server. */
+        remove_fallback();
         register_route_with_server(s_route_count - 1U);
         reregister_fallback_last();
     }
@@ -303,6 +318,7 @@ sas_status_t sas_http_register_ws_handler(const char *uri, httpd_uri_t *ws_uri_h
     if (s_started)
     {
         /* See the matching note in sas_http_register_route(). */
+        remove_fallback();
         register_ws_route_with_server(s_ws_route_count - 1U);
         reregister_fallback_last();
     }
@@ -312,6 +328,34 @@ sas_status_t sas_http_register_ws_handler(const char *uri, httpd_uri_t *ws_uri_h
 httpd_handle_t sas_http_get_server_handle(void)
 {
     return s_server;
+}
+
+sas_status_t sas_http_get_bearer_token(httpd_req_t *req, char *out, size_t out_len)
+{
+    if ((req == NULL) || (out == NULL) || (out_len == 0U))
+    {
+        return SAS_ERR_INVALID_ARG;
+    }
+    out[0] = '\0';
+
+    static const char scheme[] = "Bearer ";
+    char header[64];
+    if (httpd_req_get_hdr_value_str(req, "Authorization", header, sizeof(header)) != ESP_OK)
+    {
+        return SAS_ERR_INVALID_STATE;
+    }
+    if (strncmp(header, scheme, sizeof(scheme) - 1U) != 0)
+    {
+        return SAS_ERR_INVALID_STATE;
+    }
+
+    const char *token = &header[sizeof(scheme) - 1U];
+    if (strlen(token) >= out_len)
+    {
+        return SAS_ERR_INVALID_STATE;
+    }
+    (void)strcpy(out, token);
+    return SAS_STATUS_OK;
 }
 
 /* 7. Private functions */
@@ -337,12 +381,12 @@ static void load_config(void)
     \brief   httpd dispatch trampoline for every route accepted by
              sas_http_register_route(): enforces requires_auth, then calls
              through to the owning module's handler.
-    \note    Authentication is out of scope for the current build (not
-             wired up: HTTP Server declares no dependency on it), so a
-             requires_auth route responds 501 rather than either silently
-             allowing access or adding an undeclared module dependency.
-             Every route registered by this change sets requires_auth =
-             false and never hits that path.
+    \note    A requires_auth route is only dispatched when the request
+             carries a bearer token the Authentication module accepts;
+             otherwise it is answered 401 with the REST API's error envelope
+             and the handler is never invoked (SAS-HTTP-FR-005,
+             SAS-AUTH-FR-004). Where Authentication is disabled
+             (auth.enabled = false) the check is skipped.
 */
 static esp_err_t dispatch_route(httpd_req_t *req)
 {
@@ -352,12 +396,18 @@ static esp_err_t dispatch_route(httpd_req_t *req)
         return ESP_ERR_INVALID_ARG;
     }
 
-    if (route->requires_auth)
+    if (route->requires_auth && sas_auth_is_enabled())
     {
-        httpd_resp_set_status(req, "501 Not Implemented");
-        (void)httpd_resp_send(req, "Authentication is not enabled on this build.",
-                              HTTPD_RESP_USE_STRLEN);
-        return ESP_OK;
+        char token[33];
+        if ((sas_http_get_bearer_token(req, token, sizeof(token)) != SAS_STATUS_OK) ||
+            (sas_auth_validate_token(token) != SAS_STATUS_OK))
+        {
+            httpd_resp_set_status(req, "401 Unauthorized");
+            httpd_resp_set_type(req, "application/json");
+            (void)httpd_resp_sendstr(req, "{\"error_code\":\"unauthorized\","
+                                          "\"message\":\"Missing, invalid or expired token\"}");
+            return ESP_OK;
+        }
     }
 
     return route->handler(req);
@@ -385,15 +435,33 @@ static esp_err_t default_static_handler(httpd_req_t *req)
     }
     (void)snprintf(path, sizeof(path), "/www%.*s", (int)uri_len, uri_path);
 
-    uint8_t chunk[SAS_HTTP_STATIC_READ_CHUNK];
+    /* Never served: Configuration Manager's store (holds credentials), dotfiles, and any path
+     * that tries to climb out of the web root. */
+    const char *relative = &path[4]; /* past "/www" */
+    size_t private_len = sizeof(SAS_HTTP_PRIVATE_PATH_PREFIX) - 1U;
+    bool is_private = (strncmp(relative, SAS_HTTP_PRIVATE_PATH_PREFIX, private_len) == 0) &&
+                      ((relative[private_len] == '\0') || (relative[private_len] == '/'));
+    if (is_private || (strstr(path, "/.") != NULL))
+    {
+        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, NULL);
+        return ESP_OK;
+    }
+
+    /* static, not stack-local: keeps the httpd task's stack footprint small; safe because
+     * esp_http_server runs one handler to completion at a time on that task. */
+    static uint8_t chunk[SAS_HTTP_STATIC_READ_CHUNK];
     size_t offset = 0U;
     size_t total_read = 0U;
     sas_status_t status = sas_fs_read(path, offset, chunk, sizeof(chunk), &total_read);
     if (status != SAS_STATUS_OK)
     {
-        /* No File Manager match (missing file, or the LittleFS mount itself
-         * failed): minimal embedded fallback rather than a full duplicate
-         * copy of the dashboard's static assets. */
+        if (strcmp(path, "/www/index.html") != 0)
+        {
+            httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, NULL); /* SAS-HTTP-FR-004 */
+            return ESP_OK;
+        }
+        /* The dashboard itself is missing (or the LittleFS mount failed): minimal embedded
+         * fallback rather than a full duplicate copy of the dashboard's static assets. */
         static const char fallback_body[] =
             "<!doctype html><title>SAS</title>SAS device: filesystem unavailable.";
         httpd_resp_set_type(req, "text/html");
@@ -462,6 +530,23 @@ static void register_ws_route_with_server(size_t index)
 }
 
 /*!
+    \brief   Unregister the "/x" static-fallback handler, if present.
+    \note    Must run before any GET route is registered on a live server:
+             httpd_register_uri_handler() rejects a new URI that an
+             already-registered wildcard pattern matches
+             (ESP_ERR_HTTPD_HANDLER_EXISTS), and the fallback's wildcard
+             matches every GET URI.
+*/
+static void remove_fallback(void)
+{
+    if ((s_server != NULL) && s_fallback_registered)
+    {
+        (void)httpd_unregister_uri_handler(s_server, "/*", HTTP_GET);
+        s_fallback_registered = false;
+    }
+}
+
+/*!
     \brief   Register (or move) the "/x" static-fallback handler so it is
              always the most-recently-registered handler.
     \note    esp-idf httpd dispatches by first-registration-match, not by
@@ -481,10 +566,7 @@ static void reregister_fallback_last(void)
     {
         return;
     }
-    if (s_fallback_registered)
-    {
-        (void)httpd_unregister_uri_handler(s_server, "/*", HTTP_GET);
-    }
+    remove_fallback();
     httpd_uri_t fallback = {
         .uri = "/*",
         .method = HTTP_GET,

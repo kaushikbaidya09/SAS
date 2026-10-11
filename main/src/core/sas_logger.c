@@ -360,7 +360,12 @@ static sas_status_t log_write(sas_log_level_t level, const char *tag, const char
     }
 
     if (!persist) {
-        esp_log_writev(level_to_esp_log_level(level), tag, fmt, args);
+        /* esp_log_writev() emits the bare format string, so the usual ESP-IDF line shape
+         * ("W (1234) tag: message" plus newline) is built here. */
+        char message[SAS_LOGGER_LINE_MAX_LEN];
+        (void)vsnprintf(message, sizeof(message), fmt, args);
+        esp_log_write(level_to_esp_log_level(level), tag, "%c (%u) %s: %s\n", level_to_char(level),
+                      (unsigned int)esp_log_timestamp(), tag, message);
         return SAS_STATUS_OK;
     }
 

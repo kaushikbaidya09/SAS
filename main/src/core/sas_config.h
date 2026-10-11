@@ -25,9 +25,11 @@
 
 /*! Maximum length, including the null terminator, of a
     sas_config_value_t.value.str_val entry. Defined here (ahead of the
-    Public constants section) because sas_config_value_t below requires it;
-    placeholder size, to be tuned during implementation. */
-#define SAS_CFG_MAX_STRING_LEN (64U)
+    Public constants section) because sas_config_value_t below requires it.
+    Sized to hold a 64-character value plus NUL with headroom: a 64-hex-digit
+    Wi-Fi PSK and Authentication's hex-encoded SHA-256 HMAC are both exactly
+    64 characters. */
+#define SAS_CFG_MAX_STRING_LEN (80U)
 
 /*! Discriminator for the value union carried by sas_config_value_t. */
 typedef enum {
@@ -97,6 +99,27 @@ sas_status_t sas_config_stop(void);
              initialized or still started (call sas_config_stop() first).
 */
 sas_status_t sas_config_deinit(void);
+
+/*!
+    \brief   Re-read the backing file into the in-RAM table.
+    \note    Boot Sequencing calls this once File Manager has mounted the
+             filesystem: Configuration Manager starts ahead of File Manager
+             in Development Order, so the load attempted by
+             sas_config_start() cannot find the file yet.
+    \return  SAS_STATUS_OK if the file was loaded; SAS_ERR_INVALID_STATE if
+             not started; SAS_ERR_TIMEOUT (lock busy); any other status if
+             the file is missing or corrupt, in which case the compiled-in
+             defaults are (re)seeded.
+*/
+sas_status_t sas_config_reload(void);
+
+/*!
+    \brief   Query whether a key currently holds a stored value.
+    \param   key Non-NULL key.
+    \return  true if key is present in the table; false otherwise (including
+             a NULL/invalid key or a busy lock).
+*/
+bool sas_config_has_key(const char *key);
 
 /*!
     \brief   Retrieve the value stored for a configuration key.

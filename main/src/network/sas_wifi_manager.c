@@ -176,6 +176,8 @@ sas_status_t sas_wifi_start(void)
     s_started = true;
 
     if (s_creds.ssid[0] == '\0') {
+        /* SAS-WIFI-FR-002: no stored credentials, so go straight to the fallback AP. */
+        set_state_and_publish(SAS_WIFI_STATE_AP_FALLBACK);
         switch_to_ap_fallback();
     } else {
         /* sas_wifi_connect() -> begin_sta_connect() performs the full
@@ -350,6 +352,28 @@ sas_wifi_state_t sas_wifi_get_state(void)
         xSemaphoreGive(s_state_lock);
     }
     return state;
+}
+
+sas_status_t sas_wifi_get_status(sas_wifi_status_t *out)
+{
+    if (out == NULL) {
+        return SAS_ERR_INVALID_ARG;
+    }
+
+    (void)memset(out, 0, sizeof(*out));
+    if (s_initialized && (xSemaphoreTake(s_state_lock, SAS_WIFI_LOCK_WAIT_TICKS) == pdTRUE)) {
+        out->state = s_state;
+        (void)strncpy(out->ssid, s_creds.ssid, sizeof(out->ssid) - 1U);
+        xSemaphoreGive(s_state_lock);
+    }
+
+    if (out->state == SAS_WIFI_STATE_CONNECTED) {
+        wifi_ap_record_t ap_info;
+        if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+            out->rssi = ap_info.rssi;
+        }
+    }
+    return SAS_STATUS_OK;
 }
 
 /* 7. Private functions */
@@ -530,8 +554,12 @@ static void switch_to_ap_fallback(void)
     ap_config.ap.max_connection = SAS_WIFI_AP_FALLBACK_MAX_CONN;
     ap_config.ap.authmode = WIFI_AUTH_OPEN;
 
+    /* AP+STA rather than AP-only: esp_wifi_scan_start() needs the station interface, and an
+     * operator on the fallback AP has to be able to scan for the network to join. The station
+     * side stays idle here - wifi_event_handler() only issues a connect while a connection
+     * attempt is in progress. */
     (void)esp_wifi_stop();
-    (void)esp_wifi_set_mode(WIFI_MODE_AP);
+    (void)esp_wifi_set_mode(WIFI_MODE_APSTA);
     (void)esp_wifi_set_config(WIFI_IF_AP, &ap_config);
     (void)esp_wifi_start();
 }
@@ -546,7 +574,12 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 
     if (event_base == WIFI_EVENT) {
         if (event_id == WIFI_EVENT_STA_START) {
-            issue_connect_or_handle_failure();
+            /* Also fires when the fallback AP comes up in AP+STA mode, where there is nothing
+             * to connect to. */
+            sas_wifi_state_t state = sas_wifi_get_state();
+            if ((state == SAS_WIFI_STATE_CONNECTING) || (state == SAS_WIFI_STATE_RECONNECTING)) {
+                issue_connect_or_handle_failure();
+            }
         } else if (event_id == WIFI_EVENT_STA_DISCONNECTED) {
             handle_sta_disconnected();
         } else {

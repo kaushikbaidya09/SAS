@@ -251,6 +251,229 @@ table.sas-table tbody tr:last-child td {
   flex: none;
 }
 
+/* Buttons: secondary, destructive, link-like, busy */
+.sas-btn-quiet {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--border);
+}
+
+.sas-btn-danger {
+  background: transparent;
+  color: var(--err);
+  border: 1px solid var(--err);
+}
+
+.sas-link, .sas-sort {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.sas-sort {
+  color: inherit;
+  font-weight: inherit;
+}
+
+.sas-btn.sas-busy::after {
+  content: "";
+  display: inline-block;
+  width: 0.8em;
+  height: 0.8em;
+  margin-left: 0.5em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  vertical-align: -0.1em;
+  animation: sas-spin 0.8s linear infinite;
+}
+
+@keyframes sas-spin {
+  to { transform: rotate(360deg); }
+}
+
+.sas-auth-btn {
+  margin-left: auto;
+  padding: 0.3rem 0.75rem;
+}
+
+.sas-view-actions h1 {
+  margin: 0;
+}
+
+/* Cards and label/value rows */
+.sas-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 1rem;
+}
+
+.sas-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  min-width: 0;
+}
+
+.sas-cards .sas-card {
+  margin-bottom: 0;
+}
+
+.sas-card h2 {
+  font-size: 1rem;
+  margin: 0 0 0.75rem;
+}
+
+.sas-rows {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.35rem 1rem;
+  margin: 0;
+}
+
+.sas-rows dt {
+  color: var(--text-dim);
+}
+
+.sas-rows dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.sas-rows dd[data-status="ok"], .sas-rows dd[data-status="connected"] { color: var(--ok); }
+.sas-rows dd[data-status="failed"] { color: var(--err); }
+.sas-rows dd[data-status="skipped_dependency"], .sas-rows dd[data-status="connecting"],
+.sas-rows dd[data-status="reconnecting"], .sas-rows dd[data-status="ap_fallback"],
+.sas-rows dd[data-status="receiving"], .sas-rows dd[data-status="verifying"] { color: var(--warn); }
+.sas-rows dd[data-status="ready_to_reboot"] { color: var(--ok); }
+
+/* Forms */
+.sas-form {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+  max-width: 28rem;
+}
+
+.sas-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  width: 100%;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+}
+
+input[type="text"], input[type="password"], input[type="url"] {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  padding: 0.5rem;
+  width: 100%;
+}
+
+input[type="file"] {
+  color: var(--text);
+  max-width: 100%;
+}
+
+.sas-error {
+  color: var(--err);
+  margin: 0;
+  min-height: 1.2em;
+}
+
+.sas-progress {
+  width: 100%;
+  max-width: 28rem;
+  height: 0.6rem;
+  accent-color: var(--accent);
+  vertical-align: middle;
+}
+
+/* Tables: per-row action buttons */
+.sas-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.sas-row-actions .sas-btn {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.85rem;
+}
+
+/* Wi-Fi signal bars (the dBm value is in the title/aria-label) */
+.sas-bars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 1rem;
+}
+
+.sas-bars span {
+  width: 4px;
+  background: var(--border);
+}
+
+.sas-bars span.on {
+  background: var(--ok);
+}
+
+/* Files view */
+.sas-usage, .sas-crumbs {
+  margin-bottom: 0.75rem;
+}
+
+.sas-table-wrap + .sas-form, .sas-table-wrap + div > .sas-form {
+  margin-top: 1rem;
+}
+
+/* Terminal view */
+.sas-term-pane {
+  min-height: 40vh;
+}
+
+.sas-term-cmd { color: var(--accent); }
+.sas-term-note { color: var(--warn); }
+
+.sas-term-input {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  font-family: var(--mono);
+}
+
+.sas-term-input input {
+  flex: 1;
+  font-family: var(--mono);
+}
+
+/* Toast */
+.sas-toast {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  max-width: calc(100vw - 2rem);
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--accent);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  z-index: 10;
+}
+
+[hidden] {
+  display: none !important;
+}
+
 /* >= 768px: fixed left sidebar */
 @media (min-width: 768px) {
   #app {

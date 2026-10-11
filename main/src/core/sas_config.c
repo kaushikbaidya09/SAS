@@ -20,7 +20,8 @@ static const char *TAG = "sas_config";
 
 /* 2. Private macros */
 #define SAS_CFG_STORE_FILE_PATH                                                                    \
-    "/config/sas.cfg" ///< Backing store path on the File Manager LittleFS partition.
+    "/www/config/sas.cfg" ///< Backing store path on the File Manager LittleFS partition (mounted
+                          ///< at /www; the HTTP Server and REST API refuse to serve /config).
 
 #define SAS_CFG_LOCK_WAIT_TICKS                                                                    \
     pdMS_TO_TICKS(50) ///< Bounded wait for the internal state mutex; critical sections are
@@ -128,7 +129,9 @@ sas_status_t sas_config_start(void)
     if (xSemaphoreTake(s_lock, SAS_CFG_LOCK_WAIT_TICKS) == pdTRUE) {
         sas_status_t load_status = load_from_file();
         if (load_status != SAS_STATUS_OK) {
-            sas_log_warn("config load failed (0x%x); seeding compiled-in defaults",
+            /* Expected at boot: File Manager has not mounted the filesystem yet, see
+             * sas_config_reload(). */
+            sas_log_info("config not loaded yet (0x%x); using compiled-in defaults",
                          (unsigned int)load_status);
             clear_table();
             seed_defaults();
@@ -249,6 +252,38 @@ sas_status_t sas_config_set(const char *key, const sas_config_value_t *val)
     }
 
     return status;
+}
+
+sas_status_t sas_config_reload(void)
+{
+    if (!s_started) {
+        return SAS_ERR_INVALID_STATE;
+    }
+
+    sas_status_t status = SAS_ERR_TIMEOUT;
+    if (xSemaphoreTake(s_lock, SAS_CFG_LOCK_WAIT_TICKS) == pdTRUE) {
+        status = load_from_file();
+        if (status != SAS_STATUS_OK) {
+            clear_table();
+            seed_defaults();
+        }
+        xSemaphoreGive(s_lock);
+    }
+    return status;
+}
+
+bool sas_config_has_key(const char *key)
+{
+    if ((key == NULL) || !is_key_valid(key) || !s_initialized) {
+        return false;
+    }
+
+    bool present = false;
+    if (xSemaphoreTake(s_lock, SAS_CFG_LOCK_WAIT_TICKS) == pdTRUE) {
+        present = (find_entry(key) != NULL);
+        xSemaphoreGive(s_lock);
+    }
+    return present;
 }
 
 sas_status_t sas_config_factory_reset(void)
@@ -552,8 +587,8 @@ static sas_status_t save_to_file(void)
 }
 
 /*! \brief Read the store file into s_table. May leave it partially populated on a bad file; safe
- * since sas_config_start() (the only caller) clears it on any failure, and this avoids a large
- * stack copy. */
+ * since both callers (sas_config_start(), sas_config_reload()) clear it on any failure, and this
+ * avoids a large stack copy. */
 static sas_status_t load_from_file(void)
 {
     size_t read_len = 0U;

@@ -6,7 +6,9 @@
     LittleFS-backed file storage: directory listing, read/write/delete/rename,
     and free-space accounting. sas_fs_write() performs an atomic
     write-then-rename replace and pre-checks the free-space margin before any
-    bytes are written.
+    bytes are written; sas_fs_write_begin()/append()/commit() give the same
+    guarantees to a caller that receives the data in pieces (e.g. an HTTP
+    upload too large to buffer in RAM).
 
     \dependencies
     (none: File Manager is a Layer-1 module with no compile-time header deps.
@@ -123,7 +125,8 @@ sas_status_t sas_fs_read(const char *path, size_t offset, uint8_t *out_buf, size
 /*!
     \brief   Atomically write data to path (write-temp-then-rename replace),
              pre-checked against SAS_FS_MIN_FREE_MARGIN_BYTES.
-    \param   path Non-NULL destination path.
+    \param   path Non-NULL destination path; missing parent directories are
+                  created.
     \param   data Non-NULL source buffer.
     \param   len  Length of data in bytes.
     \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_ARG if path or data is
@@ -131,6 +134,47 @@ sas_status_t sas_fs_read(const char *path, size_t offset, uint8_t *out_buf, size
              free-space margin (target file left unmodified).
 */
 sas_status_t sas_fs_write(const char *path, const uint8_t *data, size_t len);
+
+/*!
+    \brief   Begin a streamed atomic write to path: data goes to a temp file
+             that only replaces path on sas_fs_write_commit(). One streamed
+             write may be open at a time.
+    \param   path         Non-NULL destination path; missing parent
+                          directories are created.
+    \param   expected_len Total size the caller intends to write, used for
+                          the free-space pre-check (0 if unknown).
+    \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_ARG if path is NULL or
+             too long; SAS_ERR_INVALID_STATE if a streamed write is already
+             open; SAS_FS_ERR_NO_SPACE if expected_len would breach the
+             free-space margin or the temp file cannot be created.
+*/
+sas_status_t sas_fs_write_begin(const char *path, size_t expected_len);
+
+/*!
+    \brief   Append data to the streamed write opened by sas_fs_write_begin().
+    \param   data Non-NULL source buffer.
+    \param   len  Length of data in bytes.
+    \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_ARG if data is NULL;
+             SAS_ERR_INVALID_STATE if no streamed write is open;
+             SAS_FS_ERR_NO_SPACE if the write fails or would breach the
+             free-space margin (the streamed write is aborted).
+*/
+sas_status_t sas_fs_write_append(const uint8_t *data, size_t len);
+
+/*!
+    \brief   Finish the streamed write, atomically replacing the destination.
+    \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_STATE if no streamed
+             write is open; SAS_FS_ERR_NO_SPACE if the final rename fails
+             (target file left unmodified).
+*/
+sas_status_t sas_fs_write_commit(void);
+
+/*!
+    \brief   Discard the streamed write, leaving the destination unmodified.
+    \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_STATE if no streamed
+             write is open.
+*/
+sas_status_t sas_fs_write_abort(void);
 
 /*!
     \brief   Delete a file.

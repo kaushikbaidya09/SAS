@@ -38,5 +38,12 @@ idf_component_register(
         esp_http_server
         esp_https_server
         esp_ringbuf
+        esp_http_client
+        esp_security
+        esp_app_format
+        app_update
+        efuse
+        mbedtls
+        spi_flash
         joltwallet__littlefs
 )

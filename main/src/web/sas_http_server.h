@@ -14,12 +14,15 @@
       handler.
     - Event Bus (main/src/core/sas_event_bus.h): publishes server
       lifecycle and connection events for other modules to consume.
+    - Authentication (main/src/auth/sas_auth.h): validates the bearer token
+      on every route registered with requires_auth = true (SAS-HTTP-FR-005).
 */
 
 #pragma once
 
 /* 1. Standard includes */
 #include <stdbool.h>
+#include <stddef.h>
 
 /* 2. ESP-IDF includes */
 #include "esp_err.h"
@@ -112,3 +115,15 @@ sas_status_t sas_http_register_ws_handler(const char *uri, httpd_uri_t *ws_uri_h
              sas_http_stop() has not since; NULL otherwise.
 */
 httpd_handle_t sas_http_get_server_handle(void);
+
+/*!
+    \brief   Extract the session token from a request's
+             "Authorization: Bearer <token>" header.
+    \param   req     Non-NULL request.
+    \param   out     Non-NULL destination for the NUL-terminated token.
+    \param   out_len Capacity of out in bytes (33 holds any token).
+    \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_ARG if req or out is
+             NULL or out_len is 0; SAS_ERR_INVALID_STATE if the header is
+             absent, is not a Bearer credential, or does not fit out.
+*/
+sas_status_t sas_http_get_bearer_token(httpd_req_t *req, char *out, size_t out_len);

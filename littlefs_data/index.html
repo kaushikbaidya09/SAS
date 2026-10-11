@@ -1,16 +1,13 @@
+<!doctype html>
 <!--
   SAS Dashboard shell.
 
   Served as a static asset by the HTTP Server; there is no device-side
-  sas_dashboard.c/.h module. This shell + js/dashboard.js currently cover
-  Home, Wi-Fi, and BLE views, plus a Logs view backed by the Logger
-  module's history/live-stream additions (see main/src/core/sas_logger.h).
-
-  Files, OTA, Login, and Terminal views are not built here: their
-  device-side modules (File Manager's upload/rename/delete surface,
-  OTA Manager, Authentication, Terminal) are out of scope for this change
-  and remain stubs - intentionally deferred, not an oversight.
+  sas_dashboard.c/.h module. js/dashboard.js builds the shell and the Home,
+  Wi-Fi, BLE, Files, OTA, Logs, Account and Login views; js/terminal.js
+  provides the Terminal view (window.SASTerminal) and must load first.
 -->
+<html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SAS Dashboard</title>
@@ -20,4 +17,6 @@
   <!-- dashboard.js builds the header, nav, and view container here. -->
 </div>
 
+<script src="js/terminal.js"></script>
 <script src="js/dashboard.js"></script>
+</html>

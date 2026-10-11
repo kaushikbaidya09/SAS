@@ -15,8 +15,20 @@
       sas_ws_send_to_client(); every command handler and every terminal
       session in this module is addressed by, and streams output through,
       that client type.
+    - Authentication (main/src/auth/sas_auth.h): where it is enabled, the
+      client's session token is validated before every command.
     - Event Bus (main/src/core/sas_event_bus.h): not yet included; reserved
       for a future terminal-session lifecycle event.
+
+    - System Information (main/src/core/sas_sysinfo.h) and Wi-Fi Manager
+      (main/src/network/sas_wifi_manager.h): read by the built-in commands
+      below.
+
+    Built-in commands, registered by this module's own init(): "help",
+    "sysinfo", "tasks", "boot", "wifi", "reboot". Terminal boots after the
+    modules those commands report on, so it registers them itself; any
+    module that boots later can add its own with
+    sas_terminal_register_command().
 */
 
 #pragma once
@@ -50,25 +62,24 @@
                              ///< the client instead of being silently dropped.
 
 /*!
-    Placeholder maximum command name length in bytes, including the NUL
-    terminator; to be tuned during implementation against actual registered
-    command names.
+    Maximum command name length in bytes, including the NUL terminator.
 */
 #define SAS_TERM_MAX_CMD_NAME_LEN (16U)
 
 /*!
-    Placeholder maximum number of entries in the static command table; to
-    be tuned during implementation against the actual number of
-    registering modules.
+    Maximum number of entries in the static command table.
 */
 #define SAS_TERM_MAX_COMMANDS (32U)
 
 /*!
-    Placeholder maximum per-client output buffer size in bytes, enforced by
-    sas_terminal_execute(); to be tuned during implementation against
-    actual command output sizes.
+    Maximum output, in bytes, one command may produce; enforced by
+    sas_terminal_execute(). Anything beyond it is discarded and reported to
+    the client as truncated.
 */
 #define SAS_TERM_MAX_OUTPUT_LEN (2048U)
+
+#define SAS_TERM_MAX_ARGS (8U) ///< Most arguments (including argv[0]) a command line may hold.
+#define SAS_TERM_MAX_LINE_LEN (128U) ///< Longest command line accepted, including the NUL.
 
 /* 5. Public types */
 
@@ -78,7 +89,8 @@
     \param   argv   Tokenized argument vector; valid only for the duration
                     of the call.
     \param   client Non-NULL WebSocket client the command was invoked from;
-                    handlers write their response to this client.
+                    handlers write their response to this client with
+                    sas_terminal_printf().
     \return  SAS_STATUS_OK on success; any other sas_status_t is reported
              to client.
 */
@@ -151,3 +163,19 @@ sas_status_t sas_terminal_register_command(const sas_terminal_command_t *cmd);
              completing (the truncation is also reported to client).
 */
 sas_status_t sas_terminal_execute(sas_ws_client_t *client, const char *command_line);
+
+/*!
+    \brief   Append formatted text to the output of the command currently
+             executing for client. For use by command handlers only.
+    \note    Output is buffered per client and streamed back as
+             "terminal_output" messages; past SAS_TERM_MAX_OUTPUT_LEN it is
+             discarded and the command's output is reported as truncated.
+    \param   client Non-NULL client passed to the command handler.
+    \param   fmt    Non-NULL printf-style format string.
+    \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_ARG if client or fmt is
+             NULL; SAS_ERR_INVALID_STATE if no command is executing for
+             client; SAS_TERM_ERR_OUTPUT_TRUNCATED if the output limit was
+             reached.
+*/
+sas_status_t sas_terminal_printf(sas_ws_client_t *client, const char *fmt, ...)
+    __attribute__((format(printf, 2, 3)));

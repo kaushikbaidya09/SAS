@@ -50,6 +50,13 @@ typedef struct {
     uint8_t auth_mode; ///< Authentication mode, per wifi_auth_mode_t.
 } sas_wifi_scan_result_t;
 
+/*! Connection status snapshot returned by sas_wifi_get_status(). */
+typedef struct {
+    sas_wifi_state_t state; ///< Current connection state.
+    char ssid[33];          ///< Configured station SSID; empty if none.
+    int8_t rssi;            ///< Link RSSI in dBm; 0 when not connected.
+} sas_wifi_status_t;
+
 /*! Station credentials supplied to sas_wifi_connect(). */
 typedef struct {
     char ssid[33];     ///< Null-terminated SSID, up to 32 characters.
@@ -136,3 +143,13 @@ sas_status_t sas_wifi_scan(sas_wifi_scan_result_t *out_array, uint8_t max_result
     \return  Current sas_wifi_state_t.
 */
 sas_wifi_state_t sas_wifi_get_state(void);
+
+/*!
+    \brief   Get the connection state together with the SSID and RSSI it
+             applies to.
+    \param   out Non-NULL destination. ssid is the configured station SSID
+                 (empty if none); rssi is the current link RSSI in dBm, or 0
+                 when not connected.
+    \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_ARG if out is NULL.
+*/
+sas_status_t sas_wifi_get_status(sas_wifi_status_t *out);

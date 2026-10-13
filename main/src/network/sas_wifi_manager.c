@@ -480,11 +480,10 @@ sas_status_t sas_wifi_get_status(sas_wifi_status_t *out)
     \brief   Change the mDNS host name the device answers to
              ("<hostname>.local"). Takes effect at once and is persisted as the
              wifi.hostname configuration key; with that key unset the name
-             defaults to "sas-" plus the last six hex digits of the station MAC
-             address.
-    \param[in] hostname  Non-NULL name of 1 to 31 characters from a-z, 0-9 and
-                         '-', not starting or ending with '-'. Upper-case
-                         letters are folded to lower case.
+             is SAS_WIFI_DEFAULT_HOSTNAME.
+    \param[in] hostname  Non-NULL name of 1 to 31 characters from a-z, 0-9,
+                         '-' and '_', not starting or ending with '-'.
+                         Upper-case letters are folded to lower case.
     \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_ARG if hostname is NULL
              or not a valid name; SAS_ERR_INVALID_STATE if not initialized or
              the mDNS responder rejected the name.
@@ -545,7 +544,7 @@ static void load_config(void)
     (void)strncpy(s_creds.password, val.value.str_val, sizeof(s_creds.password) - 1U);
     s_creds.password[sizeof(s_creds.password) - 1U] = '\0';
 
-    // wifi.hostname: a stored name wins; unset or unusable falls back to the MAC-derived one.
+    // wifi.hostname: a stored name wins; unset or unusable falls back to the default.
     (void)sas_config_get("wifi.hostname", &val, &def);
     if (!normalize_hostname(val.value.str_val, s_hostname, sizeof(s_hostname)))
     {
@@ -703,32 +702,30 @@ static uint32_t compute_backoff_ms(uint32_t retry_count)
 }
 
 /*!
-    \brief   Derive "SAS-XXXXXX" from the last 3 bytes of the factory Wi-Fi STA
-             MAC (SAS-WIFI-FR-002).
+    \brief   Copy the fallback access point's SSID, SAS_WIFI_FALLBACK_SSID, into
+             out.
 */
 static void build_fallback_ssid(char *out, size_t out_len)
 {
-    uint8_t mac[6] = {0};
-    (void)esp_wifi_get_mac(WIFI_IF_STA, mac);
-    (void)snprintf(out, out_len, "SAS-%02X%02X%02X", mac[3], mac[4], mac[5]);
+    (void)snprintf(out, out_len, "%s", SAS_WIFI_FALLBACK_SSID);
 }
 
 /*!
-    \brief   Derive the default mDNS host name "sas-xxxxxx" from the same MAC
-             bytes as the fallback SSID, so the name shown on the fallback AP
-             is also the device's default .local name.
+    \brief   Copy the default mDNS host name, SAS_WIFI_DEFAULT_HOSTNAME, into
+             out. Used when wifi.hostname is unset or unusable.
 */
 static void build_default_hostname(char *out, size_t out_len)
 {
-    uint8_t mac[6] = {0};
-    (void)esp_wifi_get_mac(WIFI_IF_STA, mac);
-    (void)snprintf(out, out_len, "sas-%02x%02x%02x", mac[3], mac[4], mac[5]);
+    (void)snprintf(out, out_len, "%s", SAS_WIFI_DEFAULT_HOSTNAME);
 }
 
 /*!
-    \brief   Validate in as a single DNS label and copy it, lower-cased, into
-             out: 1 to out_len - 1 characters from a-z, 0-9 and '-', not
+    \brief   Validate in as a single mDNS label and copy it, lower-cased, into
+             out: 1 to out_len - 1 characters from a-z, 0-9, '-' and '_', not
              starting or ending with '-'.
+    \note    '_' is not a legal host name character under RFC 952/1123, but
+             mDNS responders and the common browsers accept it, and the
+             default name uses it.
 */
 static bool normalize_hostname(const char *in, char *out, size_t out_len)
 {
@@ -745,7 +742,7 @@ static bool normalize_hostname(const char *in, char *out, size_t out_len)
         {
             c = (char)(c - 'A' + 'a');
         }
-        if (!(((c >= 'a') && (c <= 'z')) || ((c >= '0') && (c <= '9')) || (c == '-')))
+        if (!(((c >= 'a') && (c <= 'z')) || ((c >= '0') && (c <= '9')) || (c == '-') || (c == '_')))
         {
             return false;
         }

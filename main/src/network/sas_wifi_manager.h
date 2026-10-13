@@ -49,6 +49,15 @@ typedef struct
     Public constants section because sas_wifi_status_t below sizes a member with it. */
 #define SAS_WIFI_HOSTNAME_MAX_LEN (32U)
 
+/*! Default mDNS host name: the device answers at "sas_kb.local" until another
+    name is stored with sas_wifi_set_hostname(). */
+#define SAS_WIFI_DEFAULT_HOSTNAME "sas_kb"
+
+/*! SSID of the open access point the device brings up when it has no network
+    to join (SAS-WIFI-FR-002). The same on every board, so only one board at a
+    time should be in fallback within radio range. */
+#define SAS_WIFI_FALLBACK_SSID "SAS_KB"
+
 /*! \brief Connection status snapshot returned by sas_wifi_get_status(). */
 typedef struct
 {

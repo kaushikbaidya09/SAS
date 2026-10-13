@@ -2,6 +2,12 @@
 # @file    CMakeLists.txt
 # @brief   Build script for the ESP32-S3 Swiss Army Server (SAS) firmware.
 #
+# The build uses GNU Make ("Unix Makefiles"), not Ninja. The generator is
+# chosen when the build directory is first configured, and idf.py reuses it
+# from then on, so only that first run needs -G:
+#
+#   idf.py -G "Unix Makefiles" build
+#
 # Usage:
 #   idf.py build            Build the firmware with ESP-IDF (formats the
 #                           sources first)
@@ -16,6 +22,17 @@
 #==============================================================================
 
 cmake_minimum_required(VERSION 3.16)
+
+# A CMakeLists.txt cannot pick the generator (CMake fixes it before reading this
+# file), so a build directory configured for Ninja is refused instead. idf.py
+# defaults to Ninja whenever it is installed.
+if(CMAKE_GENERATOR MATCHES "Ninja")
+    message(FATAL_ERROR
+        "This project is built with GNU Make, not Ninja.\n"
+        "Delete the build directory and configure it again:\n"
+        "  rm -rf build\n"
+        "  idf.py -G \"Unix Makefiles\" build")
+endif()
 
 # Project version lives in version.txt as a Semantic Version (semver.org):
 # MAJOR.MINOR.PATCH[-PRERELEASE][+BUILD]. Re-configure when it changes.

@@ -1075,9 +1075,10 @@ static esp_err_t handle_wifi_hostname(httpd_req_t *req)
         }
         else if (status == SAS_ERR_INVALID_ARG)
         {
-            send_error(req, 400, "invalid_request",
-                       "hostname must be 1 to 31 characters from a-z, 0-9 and '-', and must not "
-                       "start or end with '-'");
+            send_error(
+                req, 400, "invalid_request",
+                "hostname must be 1 to 31 characters from a-z, 0-9, '-' and '_', and must not "
+                "start or end with '-'");
         }
         else
         {

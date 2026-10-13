@@ -69,18 +69,42 @@
 
   /* ---- shell ---- */
 
+  /*
+   * Shell: a sidebar holding the header (menu button, title, connection
+   * state, login/logout) and the nav, next to the main content area. At
+   * >= 768px the sidebar is a fixed left column; below that it becomes a
+   * sticky top bar whose nav is collapsed behind the menu button. The
+   * layout itself is all in css/style.css - this only toggles data-open.
+   */
   function buildShell() {
     var app = document.getElementById("app");
     app.innerHTML = "";
 
     var shell = el("div", "sas-shell");
+    var sidebar = el("aside", "sas-sidebar");
+    sidebar.setAttribute("data-open", "false");
+    els.sidebar = sidebar;
+
     var header = el("header", "sas-header");
+
+    var menuBtn = el("button", "sas-menu-btn");
+    menuBtn.type = "button";
+    menuBtn.setAttribute("aria-label", "Menu");
+    menuBtn.setAttribute("aria-controls", "sas-nav");
+    menuBtn.setAttribute("aria-expanded", "false");
+    menuBtn.appendChild(icon("menu"));
+    menuBtn.addEventListener("click", function () {
+      setMenuOpen(sidebar.getAttribute("data-open") !== "true");
+    });
+    header.appendChild(menuBtn);
+    els.menuBtn = menuBtn;
+
     header.appendChild(el("div", "sas-title", "SAS Dashboard"));
 
     var conn = el("div", "sas-conn");
     conn.setAttribute("data-state", "connecting");
     conn.appendChild(el("span", "sas-conn-dot"));
-    var connText = el("span", null, "Connecting...");
+    var connText = el("span", "sas-conn-text", "Connecting...");
     conn.appendChild(connText);
     header.appendChild(conn);
     els.conn = conn;
@@ -92,14 +116,16 @@
     els.authBtn = authBtn;
 
     var nav = el("nav", "sas-nav");
+    nav.id = "sas-nav";
     nav.setAttribute("aria-label", "Dashboard sections");
     var ul = document.createElement("ul");
     VIEWS.forEach(function (view) {
       var li = document.createElement("li");
       var a = document.createElement("a");
       a.href = "#" + view.id;
-      a.textContent = view.label;
       a.dataset.viewId = view.id;
+      a.appendChild(icon(view.id));
+      a.appendChild(el("span", null, view.label));
       li.appendChild(a);
       ul.appendChild(li);
     });
@@ -116,11 +142,49 @@
     toast.hidden = true;
     els.toast = toast;
 
-    shell.appendChild(header);
-    shell.appendChild(nav);
+    sidebar.appendChild(header);
+    sidebar.appendChild(nav);
+    shell.appendChild(sidebar);
     shell.appendChild(main);
     app.appendChild(shell);
     app.appendChild(toast);
+
+    document.addEventListener("keydown", function (evt) {
+      if (evt.key === "Escape") {
+        setMenuOpen(false);
+      }
+    });
+  }
+
+  /* Only has a visible effect below 768px, where the nav is collapsed. */
+  function setMenuOpen(open) {
+    els.sidebar.setAttribute("data-open", open ? "true" : "false");
+    els.menuBtn.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+
+  /* Line icons, drawn on a 24x24 grid in the current text color. */
+  var ICON_PATHS = {
+    menu: "M4 7h16M4 12h16M4 17h16",
+    home: "M4 11l8-7 8 7M6 10v9h12v-9",
+    wifi: "M3 9a13 13 0 0 1 18 0M6 12.5a8.5 8.5 0 0 1 12 0M9 16a4 4 0 0 1 6 0M12 19.5h.01",
+    ble: "M7 8l10 8-5 4V4l5 4-10 8",
+    files: "M4 6h6l2 2h8v10H4z",
+    ota: "M12 4v11M8 11l4 4 4-4M5 19h14",
+    terminal: "M4 5h16v14H4zM7 10l3 2-3 2M12 15h4",
+    logs: "M6 4h12v16H6zM9 9h6M9 12h6M9 15h4",
+    account: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM5 20a7 7 0 0 1 14 0",
+  };
+
+  function icon(name) {
+    var ns = "http://www.w3.org/2000/svg";
+    var svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("class", "sas-icon");
+    svg.setAttribute("aria-hidden", "true");
+    var path = document.createElementNS(ns, "path");
+    path.setAttribute("d", ICON_PATHS[name] || "");
+    svg.appendChild(path);
+    return svg;
   }
 
   function setConnState(newState, label) {
@@ -191,6 +255,10 @@
         links[i].removeAttribute("aria-current");
       }
     }
+
+    setMenuOpen(false); /* a choice from the collapsed menu closes it */
+    document.title = (view.label || "Log in") + " - SAS Dashboard";
+    window.scrollTo(0, 0);
 
     els.viewContainer.innerHTML = "";
     els.viewContainer.dataset.viewId = view.id;
@@ -596,10 +664,13 @@
     statusCard.appendChild(el("h2", null, "Status"));
     var rows = el("dl", "sas-rows");
     statusCard.appendChild(rows);
-    container.appendChild(statusCard);
     els.wifiStatusRows = statusCard;
 
-    container.appendChild(wifiHostnameForm());
+    /* Side by side where there is room, stacked on a phone. */
+    var top = el("div", "sas-cards sas-cards-top");
+    top.appendChild(statusCard);
+    top.appendChild(wifiHostnameForm());
+    container.appendChild(top);
 
     var actions = el("div", "sas-view-actions");
     var scanBtn = el("button", "sas-btn", "Scan");
@@ -654,7 +725,7 @@
   function wifiHostnameForm() {
     var form = el("form", "sas-form sas-card");
     form.appendChild(el("h2", null, "Device name"));
-    var name = inputField(form, "Name (a-z, 0-9 and -; reachable as <name>.local)", "text", "off");
+    var name = inputField(form, "Name (a-z, 0-9, - and _; reachable as <name>.local)", "text", "off");
     name.maxLength = 31;
     name.value = (state.wifi && state.wifi.hostname) || "";
     els.wifiHostnameInput = name;
@@ -776,6 +847,7 @@
         }
       });
     table.appendChild(tbody);
+    labelCells(table);
     els.wifiTableWrap.appendChild(table);
   }
 
@@ -954,6 +1026,7 @@
       tbody.appendChild(tr);
     });
     table.appendChild(tbody);
+    labelCells(table);
     els.bleTableWrap.appendChild(table);
   }
 
@@ -984,6 +1057,7 @@
     submit.type = "submit";
     form.appendChild(submit);
     var progress = progressBar(form);
+    progress.hide(); /* shown only while an upload is running */
     container.appendChild(form);
     els.filesDest = dest;
 
@@ -1101,6 +1175,7 @@
       tbody.appendChild(fileRow(entry));
     });
     table.appendChild(tbody);
+    labelCells(table);
     wrap.appendChild(table);
   }
 
@@ -1529,6 +1604,27 @@
       node.textContent = text;
     }
     return node;
+  }
+
+  /*
+   * Copy each column heading onto its cells as data-label. Below 640px the
+   * stylesheet hides the header row and shows every table row as a stacked
+   * card, using these labels in place of the column headings.
+   */
+  function labelCells(table) {
+    var headings = Array.prototype.map.call(table.querySelectorAll("thead th"), function (th) {
+      return th.textContent.replace(/ [\u25B2\u25BC]$/, "");
+    });
+    Array.prototype.forEach.call(table.querySelectorAll("tbody tr"), function (tr) {
+      if (tr.cells.length !== headings.length) {
+        return; /* a full-width row, e.g. the Wi-Fi connect form */
+      }
+      for (var i = 0; i < tr.cells.length; i++) {
+        if (headings[i]) {
+          tr.cells[i].setAttribute("data-label", headings[i]);
+        }
+      }
+    });
   }
 
   function appendCell(tr, text) {

@@ -1,29 +1,68 @@
 /*
  * SAS Dashboard stylesheet.
  *
- * Layout: fixed left sidebar nav at >= 768px viewport width, collapsible
- * top menu below that width. Single-column reflow below 768px with no
- * introduced horizontal scrolling (tables get their own horizontal scroll
- * container instead). Every interactive control has a visible focus
- * outline; status conveyed by color also carries a text label.
+ * Layout: at >= 768px the sidebar (header + nav) is a fixed left column
+ * and the content sits beside it. Below 768px the sidebar becomes a sticky
+ * top bar whose nav is collapsed behind the menu button
+ * (.sas-sidebar[data-open]). Below 640px tables drop their header row and
+ * show each row as a stacked card (labels come from td[data-label], set by
+ * labelCells() in js/dashboard.js), so nothing scrolls sideways.
+ *
+ * Colors follow the system light/dark preference. Every interactive
+ * control has a visible focus outline and a touch-sized hit area; status
+ * conveyed by color also carries a text label.
  */
 
 :root {
+  color-scheme: dark;
   --bg: #0f1115;
   --panel: #161a21;
+  --panel-2: #1c212a;
   --border: #2a2f3a;
   --text: #e6e8eb;
   --text-dim: #9aa3af;
   --accent: #4da3ff;
+  --on-accent: #08131f;
   --ok: #3fbf6f;
   --warn: #e0a52d;
   --err: #e2504a;
+  --radius: 0.6rem;
+  --control-h: 2.5rem;
+  --sidebar-w: 15rem;
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
 }
 
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --bg: #f4f6f9;
+    --panel: #ffffff;
+    --panel-2: #eef1f5;
+    --border: #d5dae2;
+    --text: #1a1f27;
+    --text-dim: #5b6573;
+    --accent: #0b63ce;
+    --on-accent: #ffffff;
+    --ok: #1a7f43;
+    --warn: #9a6200;
+    --err: #c2302a;
+  }
+}
+
+/* Fingers need bigger targets than a mouse pointer. */
+@media (pointer: coarse) {
+  :root {
+    --control-h: 2.75rem;
+  }
+}
+
 * {
   box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
 }
 
 html, body {
@@ -32,6 +71,7 @@ html, body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font);
+  line-height: 1.45;
   overflow-x: hidden;
 }
 
@@ -39,6 +79,7 @@ a {
   color: var(--accent);
 }
 
+/* 1rem (16px) on form controls also stops iOS zooming in on focus. */
 button, input, select {
   font-family: inherit;
   font-size: 1rem;
@@ -49,32 +90,79 @@ button, input, select {
   outline-offset: 2px;
 }
 
-#app {
-  display: flex;
-  min-height: 100vh;
+[hidden] {
+  display: none !important;
 }
 
-/* Header */
+.sas-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---- Shell (mobile first: sticky top bar + collapsed nav) ---- */
+
+.sas-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.sas-sidebar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  padding-top: env(safe-area-inset-top);
+}
+
 .sas-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid var(--border);
+  gap: 0.6rem;
+  padding: 0.5rem 0.75rem;
+  padding-left: max(0.75rem, env(safe-area-inset-left));
+  padding-right: max(0.75rem, env(safe-area-inset-right));
+}
+
+.sas-menu-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-h);
+  height: var(--control-h);
+  flex: none;
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
 }
 
 .sas-title {
-  font-weight: 600;
+  font-weight: 700;
   font-size: 1.05rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .sas-conn {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
+  margin-left: auto;
   font-size: 0.85rem;
   color: var(--text-dim);
+  white-space: nowrap;
 }
 
 .sas-conn-dot {
@@ -93,9 +181,19 @@ button, input, select {
   background: var(--warn);
 }
 
-/* Sidebar / top menu nav */
+.sas-auth-btn {
+  flex: none;
+}
+
 .sas-nav {
-  border-bottom: 1px solid var(--border);
+  display: none;
+  border-top: 1px solid var(--border);
+  max-height: calc(100dvh - 4rem);
+  overflow-y: auto;
+}
+
+.sas-sidebar[data-open="true"] .sas-nav {
+  display: block;
 }
 
 .sas-nav ul {
@@ -103,178 +201,122 @@ button, input, select {
   margin: 0;
   padding: 0.5rem;
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem;
+  flex-direction: column;
+  gap: 0.15rem;
 }
 
 .sas-nav a {
-  display: block;
-  padding: 0.5rem 0.75rem;
-  border-radius: 0.4rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: var(--control-h);
+  padding: 0.4rem 0.75rem;
+  border-radius: var(--radius);
   color: var(--text-dim);
   text-decoration: none;
 }
 
 .sas-nav a:hover {
-  background: var(--panel);
+  background: var(--panel-2);
   color: var(--text);
 }
 
 .sas-nav a[aria-current="page"] {
-  background: var(--panel);
+  background: var(--panel-2);
   color: var(--accent);
   font-weight: 600;
 }
 
-.sas-shell {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
+.sas-main {
+  flex: 1;
   min-width: 0;
+  padding: 1rem;
+  padding-left: max(1rem, env(safe-area-inset-left));
+  padding-right: max(1rem, env(safe-area-inset-right));
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
 }
 
-.sas-main {
-  padding: 1rem;
-  min-width: 0;
+.sas-view {
+  max-width: 68rem;
+  margin: 0 auto;
 }
 
 .sas-view h1 {
-  font-size: 1.2rem;
+  font-size: 1.35rem;
   margin: 0 0 1rem;
 }
 
 .sas-view-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.6rem 0.75rem;
   margin-bottom: 1rem;
 }
 
+.sas-view-actions h1 {
+  margin: 0;
+  margin-right: auto;
+}
+
+/* ---- Buttons ---- */
+
 .sas-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--control-h);
+  padding: 0.4rem 1rem;
   background: var(--accent);
-  color: #08131f;
-  border: none;
-  border-radius: 0.4rem;
-  padding: 0.5rem 1rem;
+  color: var(--on-accent);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
   cursor: pointer;
   font-weight: 600;
-}
-
-.sas-btn:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-.sas-status-text {
-  color: var(--text-dim);
-  font-size: 0.9rem;
-}
-
-.sas-table-wrap {
-  overflow-x: auto;
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
-}
-
-table.sas-table {
-  width: 100%;
-  border-collapse: collapse;
-  min-width: 480px;
-}
-
-table.sas-table th, table.sas-table td {
-  text-align: left;
-  padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
 
-table.sas-table th {
-  color: var(--text-dim);
-  font-weight: 600;
-  font-size: 0.85rem;
+.sas-btn:hover:not(:disabled) {
+  filter: brightness(1.1);
 }
 
-table.sas-table tbody tr:last-child td {
-  border-bottom: none;
+.sas-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 
-.sas-empty {
-  color: var(--text-dim);
-  padding: 1rem;
-  text-align: center;
-}
-
-.sas-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.15rem 0.5rem;
-  border-radius: 999px;
-  font-size: 0.8rem;
-  background: var(--panel);
-  border: 1px solid var(--border);
-}
-
-.sas-pill[data-level="ERROR"] { color: var(--err); }
-.sas-pill[data-level="WARN"] { color: var(--warn); }
-.sas-pill[data-level="INFO"] { color: var(--accent); }
-.sas-pill[data-level="DEBUG"], .sas-pill[data-level="VERBOSE"] { color: var(--text-dim); }
-
-/* Logs view */
-.sas-log-pane {
-  font-family: var(--mono);
-  font-size: 0.85rem;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  padding: 0.75rem;
-  max-height: 60vh;
-  overflow-y: auto;
-  white-space: pre-wrap;
-  overflow-wrap: break-word;
-}
-
-.sas-log-line {
-  display: flex;
-  gap: 0.5rem;
-  padding: 0.1rem 0;
-}
-
-.sas-log-ts {
-  color: var(--text-dim);
-  flex: none;
-}
-
-.sas-log-tag {
-  color: var(--text-dim);
-  flex: none;
-}
-
-/* Buttons: secondary, destructive, link-like, busy */
 .sas-btn-quiet {
   background: transparent;
   color: var(--accent);
-  border: 1px solid var(--border);
+  border-color: var(--border);
+}
+
+.sas-btn-quiet:hover:not(:disabled) {
+  background: var(--panel-2);
+  filter: none;
 }
 
 .sas-btn-danger {
   background: transparent;
   color: var(--err);
-  border: 1px solid var(--err);
+  border-color: var(--err);
 }
 
 .sas-link, .sas-sort {
   background: none;
   border: none;
-  padding: 0;
+  padding: 0.25rem 0;
   color: var(--accent);
   cursor: pointer;
+  text-align: left;
 }
 
 .sas-sort {
   color: inherit;
   font-weight: inherit;
+  font-size: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
 }
 
 .sas-btn.sas-busy::after {
@@ -286,7 +328,6 @@ table.sas-table tbody tr:last-child td {
   border: 2px solid currentColor;
   border-right-color: transparent;
   border-radius: 50%;
-  vertical-align: -0.1em;
   animation: sas-spin 0.8s linear infinite;
 }
 
@@ -294,26 +335,29 @@ table.sas-table tbody tr:last-child td {
   to { transform: rotate(360deg); }
 }
 
-.sas-auth-btn {
-  margin-left: auto;
-  padding: 0.3rem 0.75rem;
+@media (prefers-reduced-motion: reduce) {
+  .sas-btn.sas-busy::after {
+    animation-duration: 3s;
+  }
 }
 
-.sas-view-actions h1 {
-  margin: 0;
+.sas-status-text {
+  color: var(--text-dim);
+  font-size: 0.9rem;
 }
 
-/* Cards and label/value rows */
+/* ---- Cards and label/value rows ---- */
+
 .sas-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
   gap: 1rem;
 }
 
 .sas-card {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  border-radius: var(--radius);
   padding: 1rem;
   margin-bottom: 1rem;
   min-width: 0;
@@ -323,15 +367,28 @@ table.sas-table tbody tr:last-child td {
   margin-bottom: 0;
 }
 
+/* A row of cards followed by more content in the same view */
+.sas-cards-top {
+  margin-bottom: 1rem;
+}
+
+.sas-cards .sas-form {
+  max-width: none;
+}
+
 .sas-card h2 {
-  font-size: 1rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
   margin: 0 0 0.75rem;
 }
 
 .sas-rows {
   display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 0.35rem 1rem;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.45rem 1rem;
   margin: 0;
 }
 
@@ -341,17 +398,20 @@ table.sas-table tbody tr:last-child td {
 
 .sas-rows dd {
   margin: 0;
+  text-align: right;
+  font-weight: 500;
   overflow-wrap: anywhere;
 }
 
-.sas-rows dd[data-status="ok"], .sas-rows dd[data-status="connected"] { color: var(--ok); }
+.sas-rows dd[data-status="ok"], .sas-rows dd[data-status="connected"],
+.sas-rows dd[data-status="ready_to_reboot"] { color: var(--ok); }
 .sas-rows dd[data-status="failed"] { color: var(--err); }
 .sas-rows dd[data-status="skipped_dependency"], .sas-rows dd[data-status="connecting"],
 .sas-rows dd[data-status="reconnecting"], .sas-rows dd[data-status="ap_fallback"],
 .sas-rows dd[data-status="receiving"], .sas-rows dd[data-status="verifying"] { color: var(--warn); }
-.sas-rows dd[data-status="ready_to_reboot"] { color: var(--ok); }
 
-/* Forms */
+/* ---- Forms ---- */
+
 .sas-form {
   display: flex;
   flex-direction: column;
@@ -363,19 +423,20 @@ table.sas-table tbody tr:last-child td {
 .sas-field {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.3rem;
   width: 100%;
   color: var(--text-dim);
   font-size: 0.9rem;
 }
 
 input[type="text"], input[type="password"], input[type="url"] {
+  min-height: var(--control-h);
+  width: 100%;
   background: var(--bg);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: 0.4rem;
-  padding: 0.5rem;
-  width: 100%;
+  border-radius: var(--radius);
+  padding: 0.4rem 0.65rem;
 }
 
 input[type="file"] {
@@ -383,10 +444,37 @@ input[type="file"] {
   max-width: 100%;
 }
 
+input[type="file"]::file-selector-button {
+  min-height: var(--control-h);
+  margin-right: 0.75rem;
+  padding: 0.4rem 0.9rem;
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font: inherit;
+  cursor: pointer;
+}
+
+.sas-form h2 {
+  margin: 0;
+}
+
+/* A form that is not itself a card (the inline Wi-Fi connect form) */
+.sas-form:not(.sas-card) h2 {
+  font-size: 1rem;
+}
+
+.sas-form p {
+  margin: 0;
+}
+
+.sas-form p:empty {
+  display: none;
+}
+
 .sas-error {
   color: var(--err);
-  margin: 0;
-  min-height: 1.2em;
 }
 
 .sas-progress {
@@ -397,22 +485,67 @@ input[type="file"] {
   vertical-align: middle;
 }
 
-/* Tables: per-row action buttons */
-.sas-row-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
+/* ---- Tables ---- */
+
+.sas-table-wrap {
+  overflow-x: auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
 }
 
-.sas-row-actions .sas-btn {
-  padding: 0.25rem 0.6rem;
-  font-size: 0.85rem;
+table.sas-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+table.sas-table th, table.sas-table td {
+  text-align: left;
+  padding: 0.6rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+table.sas-table th {
+  color: var(--text-dim);
+  font-weight: 600;
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+table.sas-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+table.sas-table tbody tr:hover td {
+  background: var(--panel-2);
+}
+
+.sas-empty {
+  color: var(--text-dim);
+  padding: 1.5rem 1rem;
+  text-align: center;
+}
+
+/* Per-row action buttons. The cell stays a table cell (a flex cell would break the row's
+   borders); the buttons space themselves. */
+.sas-row-actions .sas-btn + .sas-btn {
+  margin-left: 0.4rem;
+}
+
+table.sas-table td .sas-btn {
+  min-height: 2rem;
+  padding: 0.25rem 0.7rem;
+  font-size: 0.9rem;
 }
 
 /* Wi-Fi scan table: the connect form row that opens under a network */
-table.sas-table tr.sas-row-form td {
+table.sas-table tr.sas-row-form td,
+table.sas-table tr.sas-row-form:hover td {
   background: var(--bg);
   padding: 1rem;
+  white-space: normal;
 }
 
 /* Wi-Fi signal bars (the dBm value is in the title/aria-label) */
@@ -425,6 +558,7 @@ table.sas-table tr.sas-row-form td {
 
 .sas-bars span {
   width: 4px;
+  border-radius: 1px;
   background: var(--border);
 }
 
@@ -432,18 +566,80 @@ table.sas-table tr.sas-row-form td {
   background: var(--ok);
 }
 
-/* Files view */
+/* ---- Files view ---- */
+
 .sas-usage, .sas-crumbs {
   margin-bottom: 0.75rem;
+}
+
+.sas-usage .sas-progress {
+  display: block;
+  margin-bottom: 0.3rem;
+}
+
+.sas-usage .sas-status-text + .sas-status-text::before {
+  content: "\00b7\00a0";
+  margin-left: 0.35rem;
 }
 
 .sas-table-wrap + .sas-form, .sas-table-wrap + div > .sas-form {
   margin-top: 1rem;
 }
 
-/* Terminal view */
+/* ---- Logs and Terminal ---- */
+
+.sas-pill {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+
+.sas-pill[data-level="ERROR"] { color: var(--err); }
+.sas-pill[data-level="WARN"] { color: var(--warn); }
+.sas-pill[data-level="INFO"] { color: var(--accent); }
+.sas-pill[data-level="DEBUG"], .sas-pill[data-level="VERBOSE"] { color: var(--text-dim); }
+
+.sas-log-pane {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem;
+  height: 65vh;
+  height: calc(100dvh - 11rem);
+  min-height: 14rem;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.sas-log-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.15rem 0.5rem;
+  padding: 0.15rem 0;
+}
+
+.sas-log-ts, .sas-log-tag {
+  color: var(--text-dim);
+  flex: none;
+}
+
+/* The message takes the rest of the line, or a line of its own when it has to wrap. */
+.sas-log-line > span:last-child {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
 .sas-term-pane {
-  min-height: 40vh;
+  height: calc(100dvh - 14.5rem);
 }
 
 .sas-term-cmd { color: var(--accent); }
@@ -455,72 +651,218 @@ table.sas-table tr.sas-row-form td {
   gap: 0.5rem;
   margin-top: 0.5rem;
   font-family: var(--mono);
+  color: var(--text-dim);
 }
 
 .sas-term-input input {
   flex: 1;
+  min-width: 0;
   font-family: var(--mono);
 }
 
-/* Toast */
+/* ---- Toast ---- */
+
 .sas-toast {
   position: fixed;
+  left: 1rem;
   right: 1rem;
-  bottom: 1rem;
-  max-width: calc(100vw - 2rem);
+  bottom: max(1rem, env(safe-area-inset-bottom));
   background: var(--panel);
   color: var(--text);
   border: 1px solid var(--accent);
-  border-radius: 0.5rem;
+  border-radius: var(--radius);
   padding: 0.75rem 1rem;
+  box-shadow: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.35);
   z-index: 10;
 }
 
-[hidden] {
-  display: none !important;
-}
+/* ---- < 640px: tables become stacked cards, forms fill the width ---- */
 
-/* >= 768px: fixed left sidebar */
-@media (min-width: 768px) {
-  #app {
-    flex-direction: row;
+@media (max-width: 639.98px) {
+  .sas-table-wrap {
+    overflow-x: visible;
+    background: none;
+    border: none;
+    border-radius: 0;
   }
 
+  table.sas-table, table.sas-table tbody {
+    display: block;
+  }
+
+  /* Still read out by screen readers, just not drawn. */
+  table.sas-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  table.sas-table tr {
+    display: block;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.35rem 0.9rem;
+    margin-bottom: 0.6rem;
+  }
+
+  table.sas-table td,
+  table.sas-table tbody tr:last-child td,
+  table.sas-table tbody tr:hover td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.45rem 0;
+    border-bottom: none;
+    background: none;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-align: right;
+  }
+
+  /* Separator above every cell but the first, so a hidden empty cell leaves no stray line. */
+  table.sas-table td + td {
+    border-top: 1px solid var(--border);
+  }
+
+  /* A cell with no column heading holds the row's one action: make it a full-width button. */
+  table.sas-table td:not([data-label]) .sas-btn {
+    flex: 1;
+  }
+
+  table.sas-table td[data-label]::before {
+    content: attr(data-label);
+    flex: none;
+    color: var(--text-dim);
+    font-size: 0.85rem;
+    text-align: left;
+  }
+
+  /* An empty cell (a directory's size, the action column of a directory) adds nothing. */
+  table.sas-table td:empty {
+    display: none;
+  }
+
+  /* The buttons are self-explanatory: drop the "Actions" label and share the row. */
+  table.sas-table td.sas-row-actions {
+    gap: 0.5rem;
+  }
+
+  table.sas-table td.sas-row-actions::before {
+    display: none;
+  }
+
+  table.sas-table td.sas-row-actions .sas-btn {
+    flex: 1;
+    margin-left: 0;
+  }
+
+  table.sas-table td .sas-btn {
+    min-height: var(--control-h);
+  }
+
+  /* The connect form sits inside the list as its own full-width block. */
+  table.sas-table tr.sas-row-form {
+    padding: 0;
+    border-color: var(--accent);
+  }
+
+  table.sas-table tr.sas-row-form td,
+  table.sas-table tr.sas-row-form:hover td {
+    display: block;
+    background: none;
+    text-align: left;
+  }
+
+  .sas-form {
+    max-width: none;
+  }
+
+  .sas-form > .sas-btn {
+    width: 100%;
+  }
+
+  .sas-progress {
+    max-width: none;
+  }
+
+  .sas-rows {
+    gap: 0.5rem 0.75rem;
+  }
+
+  /* Only the dot: the label would crowd the title on a narrow bar. */
+  .sas-conn-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+}
+
+/* ---- >= 768px: fixed left sidebar ---- */
+
+@media (min-width: 768px) {
   .sas-shell {
     flex-direction: row;
   }
 
-  .sas-header {
+  .sas-sidebar {
+    display: flex;
     flex-direction: column;
-    align-items: flex-start;
+    width: var(--sidebar-w);
+    flex: none;
+    align-self: flex-start;
+    height: 100vh;
+    height: 100dvh;
     border-bottom: none;
     border-right: 1px solid var(--border);
-    width: 220px;
-    flex: none;
-  }
-
-  .sas-nav {
-    width: 220px;
-    flex: none;
-    border-bottom: none;
-    border-right: 1px solid var(--border);
-    height: calc(100vh - 4rem);
     overflow-y: auto;
   }
 
+  .sas-menu-btn {
+    display: none;
+  }
+
+  .sas-header {
+    flex-wrap: wrap;
+    gap: 0.5rem 0.6rem;
+    padding: 1.1rem 1rem 0.9rem;
+  }
+
+  .sas-title {
+    flex: 1 1 100%;
+    font-size: 1.15rem;
+  }
+
+  .sas-conn {
+    margin-left: 0;
+    margin-right: auto;
+  }
+
+  /* Always shown, whatever data-open says. */
+  .sas-nav, .sas-sidebar[data-open="true"] .sas-nav {
+    display: block;
+    flex: 1;
+    max-height: none;
+    overflow: visible;
+  }
+
   .sas-nav ul {
-    flex-direction: column;
+    padding: 0.75rem;
   }
 
   .sas-main {
-    flex: 1;
-    padding: 1.5rem;
+    padding: 1.75rem 2rem;
   }
-}
 
-/* < 768px: single column, header + collapsible top menu, then content */
-@media (max-width: 767.98px) {
-  #app {
-    flex-direction: column;
+  .sas-toast {
+    left: auto;
+    right: 1.5rem;
+    bottom: 1.5rem;
+    max-width: 24rem;
   }
 }

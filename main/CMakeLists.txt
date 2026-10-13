@@ -46,4 +46,5 @@ idf_component_register(
         mbedtls
         spi_flash
         joltwallet__littlefs
+        espressif__mdns
 )

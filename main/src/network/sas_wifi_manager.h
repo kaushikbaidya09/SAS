@@ -50,11 +50,18 @@ typedef struct {
     uint8_t auth_mode; ///< Authentication mode, per wifi_auth_mode_t.
 } sas_wifi_scan_result_t;
 
+/*! Size of an mDNS host name buffer: up to 31 characters plus the NUL. Defined ahead of the
+    Public constants section because sas_wifi_status_t below sizes a member with it. */
+#define SAS_WIFI_HOSTNAME_MAX_LEN (32U)
+
 /*! Connection status snapshot returned by sas_wifi_get_status(). */
 typedef struct {
     sas_wifi_state_t state; ///< Current connection state.
     char ssid[33];          ///< Configured station SSID; empty if none.
     int8_t rssi;            ///< Link RSSI in dBm; 0 when not connected.
+    char ip[16];            ///< Station IPv4 address, dotted; empty when not connected.
+    char hostname[SAS_WIFI_HOSTNAME_MAX_LEN]; ///< mDNS host name; the device answers at
+                                              ///< "<hostname>.local".
 } sas_wifi_status_t;
 
 /*! Station credentials supplied to sas_wifi_connect(). */
@@ -149,7 +156,24 @@ sas_wifi_state_t sas_wifi_get_state(void);
              applies to.
     \param   out Non-NULL destination. ssid is the configured station SSID
                  (empty if none); rssi is the current link RSSI in dBm, or 0
-                 when not connected.
+                 when not connected; ip is the address the access point's
+                 DHCP server assigned; hostname is the mDNS name the device
+                 can be reached by regardless of that address.
     \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_ARG if out is NULL.
 */
 sas_status_t sas_wifi_get_status(sas_wifi_status_t *out);
+
+/*!
+    \brief   Change the mDNS host name the device answers to
+             ("<hostname>.local"). Takes effect at once and is persisted as
+             the wifi.hostname configuration key; with that key unset the
+             name defaults to "sas-" plus the last six hex digits of the
+             station MAC address.
+    \param   hostname Non-NULL name of 1 to 31 characters from a-z, 0-9 and
+                      '-', not starting or ending with '-'. Upper-case
+                      letters are folded to lower case.
+    \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_ARG if hostname is
+             NULL or not a valid name; SAS_ERR_INVALID_STATE if not
+             initialized or the mDNS responder rejected the name.
+*/
+sas_status_t sas_wifi_set_hostname(const char *hostname);

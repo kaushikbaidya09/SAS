@@ -472,6 +472,9 @@ static esp_err_t default_static_handler(httpd_req_t *req)
     /* Stream the file in SAS_HTTP_STATIC_READ_CHUNK-sized pieces regardless
      * of size: a short read (total_read < sizeof(chunk)) marks end of file. */
     httpd_resp_set_type(req, content_type_for_path(path));
+    /* The dashboard's files change with every filesystem flash; without this a browser keeps
+     * running its cached copy of the old ones. */
+    (void)httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
     while (total_read > 0U)
     {
         if (httpd_resp_send_chunk(req, (const char *)chunk, total_read) != ESP_OK)

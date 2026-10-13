@@ -409,6 +409,12 @@ input[type="file"] {
   font-size: 0.85rem;
 }
 
+/* Wi-Fi scan table: the connect form row that opens under a network */
+table.sas-table tr.sas-row-form td {
+  background: var(--bg);
+  padding: 1rem;
+}
+
 /* Wi-Fi signal bars (the dBm value is in the title/aria-label) */
 .sas-bars {
   display: inline-flex;

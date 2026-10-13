@@ -15,6 +15,7 @@
 #include "esp_netif.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
+#include "mdns.h"
 #include "nvs_flash.h"
 
 #include "freertos/FreeRTOS.h"
@@ -60,6 +61,7 @@ static bool s_started = false;
 static sas_wifi_state_t s_state = SAS_WIFI_STATE_IDLE;
 static uint32_t s_retry_count = 0U;
 static sas_wifi_credentials_t s_creds;
+static char s_hostname[SAS_WIFI_HOSTNAME_MAX_LEN]; ///< mDNS host name; set by load_config().
 
 static uint32_t s_max_retry_count = 5U;
 static uint32_t s_initial_backoff_ms = 1000U;
@@ -93,6 +95,9 @@ static void retry_timer_callback(void *arg);
 static void set_state_and_publish(sas_wifi_state_t new_state);
 static void handle_sta_disconnected(void);
 static void build_fallback_ssid(char *out, size_t out_len);
+static void build_default_hostname(char *out, size_t out_len);
+static bool normalize_hostname(const char *in, char *out, size_t out_len);
+static void start_mdns(void);
 static void switch_to_ap_fallback(void);
 static void begin_sta_connect(void);
 static void issue_connect_or_handle_failure(void);
@@ -156,6 +161,7 @@ sas_status_t sas_wifi_init(void)
     configASSERT(esp_timer_create(&retry_timer_args, &s_retry_timer) == ESP_OK);
 
     load_config();
+    start_mdns();
 
     s_state = SAS_WIFI_STATE_IDLE;
     s_retry_count = 0U;
@@ -364,6 +370,7 @@ sas_status_t sas_wifi_get_status(sas_wifi_status_t *out)
     if (s_initialized && (xSemaphoreTake(s_state_lock, SAS_WIFI_LOCK_WAIT_TICKS) == pdTRUE)) {
         out->state = s_state;
         (void)strncpy(out->ssid, s_creds.ssid, sizeof(out->ssid) - 1U);
+        (void)strncpy(out->hostname, s_hostname, sizeof(out->hostname) - 1U);
         xSemaphoreGive(s_state_lock);
     }
 
@@ -372,7 +379,44 @@ sas_status_t sas_wifi_get_status(sas_wifi_status_t *out)
         if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
             out->rssi = ap_info.rssi;
         }
+
+        esp_netif_ip_info_t ip_info;
+        if ((s_netif_sta != NULL) && (esp_netif_get_ip_info(s_netif_sta, &ip_info) == ESP_OK)) {
+            (void)snprintf(out->ip, sizeof(out->ip), IPSTR, IP2STR(&ip_info.ip));
+        }
     }
+    return SAS_STATUS_OK;
+}
+
+sas_status_t sas_wifi_set_hostname(const char *hostname)
+{
+    char normalized[SAS_WIFI_HOSTNAME_MAX_LEN];
+    if ((hostname == NULL) || !normalize_hostname(hostname, normalized, sizeof(normalized))) {
+        return SAS_ERR_INVALID_ARG;
+    }
+    if (!s_initialized) {
+        return SAS_ERR_INVALID_STATE;
+    }
+
+    /* Applied first: the responder re-announces under the new name right away. */
+    if (mdns_hostname_set(normalized) != ESP_OK) {
+        return SAS_ERR_INVALID_STATE;
+    }
+
+    if (xSemaphoreTake(s_state_lock, SAS_WIFI_LOCK_WAIT_TICKS) == pdTRUE) {
+        (void)strcpy(s_hostname, normalized);
+        xSemaphoreGive(s_state_lock);
+    }
+
+    sas_config_value_t val;
+    val.type = SAS_CFG_TYPE_STRING;
+    (void)strcpy(val.value.str_val, normalized);
+    sas_status_t persist_status = sas_config_set("wifi.hostname", &val);
+    if (persist_status != SAS_STATUS_OK) {
+        sas_log_warn("failed to persist wifi.hostname (0x%x)", (unsigned int)persist_status);
+    }
+
+    sas_log_info("mDNS name: %s.local", normalized);
     return SAS_STATUS_OK;
 }
 
@@ -394,6 +438,12 @@ static void load_config(void)
     (void)sas_config_get("wifi.sta.password", &val, &def);
     (void)strncpy(s_creds.password, val.value.str_val, sizeof(s_creds.password) - 1U);
     s_creds.password[sizeof(s_creds.password) - 1U] = '\0';
+
+    /* wifi.hostname: a stored name wins; unset or unusable falls back to the MAC-derived one. */
+    (void)sas_config_get("wifi.hostname", &val, &def);
+    if (!normalize_hostname(val.value.str_val, s_hostname, sizeof(s_hostname))) {
+        build_default_hostname(s_hostname, sizeof(s_hostname));
+    }
 
     def.type = SAS_CFG_TYPE_INT;
     def.value.int_val = (int32_t)s_max_retry_count;
@@ -534,6 +584,58 @@ static void build_fallback_ssid(char *out, size_t out_len)
     uint8_t mac[6] = {0};
     (void)esp_wifi_get_mac(WIFI_IF_STA, mac);
     (void)snprintf(out, out_len, "SAS-%02X%02X%02X", mac[3], mac[4], mac[5]);
+}
+
+/*! \brief Derive the default mDNS host name "sas-xxxxxx" from the same MAC bytes as the fallback
+ * SSID, so the name shown on the fallback AP is also the device's default .local name. */
+static void build_default_hostname(char *out, size_t out_len)
+{
+    uint8_t mac[6] = {0};
+    (void)esp_wifi_get_mac(WIFI_IF_STA, mac);
+    (void)snprintf(out, out_len, "sas-%02x%02x%02x", mac[3], mac[4], mac[5]);
+}
+
+/*! \brief Validate in as a single DNS label and copy it, lower-cased, into out: 1 to
+ * out_len - 1 characters from a-z, 0-9 and '-', not starting or ending with '-'. */
+static bool normalize_hostname(const char *in, char *out, size_t out_len)
+{
+    size_t len = strlen(in);
+    if ((len == 0U) || (len >= out_len) || (in[0] == '-') || (in[len - 1U] == '-')) {
+        return false;
+    }
+
+    for (size_t i = 0U; i < len; i++) {
+        char c = in[i];
+        if ((c >= 'A') && (c <= 'Z')) {
+            c = (char)(c - 'A' + 'a');
+        }
+        if (!(((c >= 'a') && (c <= 'z')) || ((c >= '0') && (c <= '9')) || (c == '-'))) {
+            return false;
+        }
+        out[i] = c;
+    }
+    out[len] = '\0';
+    return true;
+}
+
+/*!
+    \brief   Advertise the device over mDNS as "<hostname>.local" with an
+             _http._tcp service, so it can be found on a network whose DHCP
+             server (and therefore the device's address) the operator does
+             not control.
+    \note    Not fatal if it fails: the device is still reachable by IP.
+*/
+static void start_mdns(void)
+{
+    const char *hostname = s_hostname; /* set by load_config(), which runs first */
+
+    if ((mdns_init() != ESP_OK) || (mdns_hostname_set(hostname) != ESP_OK)) {
+        sas_log_warn("mDNS unavailable; reach the device by IP address");
+        return;
+    }
+    (void)mdns_instance_name_set("SAS Dashboard");
+    (void)mdns_service_add(NULL, "_http", "_tcp", 80, NULL, 0);
+    sas_log_info("mDNS name: %s.local", hostname);
 }
 
 /*!

@@ -409,6 +409,8 @@ static sas_status_t cmd_wifi(int argc, char **argv, sas_ws_client_t *client)
                             : "unknown";
     (void)sas_terminal_printf(client, "state: %s\nssid:  %s\nrssi:  %d dBm\n", state,
                               (wifi.ssid[0] != '\0') ? wifi.ssid : "(none)", (int)wifi.rssi);
+    (void)sas_terminal_printf(client, "ip:    %s\nname:  %s.local\n",
+                              (wifi.ip[0] != '\0') ? wifi.ip : "(none)", wifi.hostname);
     return SAS_STATUS_OK;
 }
 

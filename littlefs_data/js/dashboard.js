@@ -24,6 +24,7 @@
     pendingViewId: null, // view to return to after a successful login
     wifi: null, // {state, ssid, rssi}
     wifiResults: [],
+    wifiSelectedSsid: null, // network whose connect form is open in the scan table
     wifiScanInFlight: false,
     bleDevices: {}, // mac -> device
     bleSort: { key: "rssi", descending: true },
@@ -564,6 +565,8 @@
       ["State", (wifi.state || "unknown").replace("_", " "), wifi.state],
       ["SSID", wifi.ssid || "(none)"],
       ["RSSI", wifi.state === "connected" ? wifi.rssi + " dBm" : "n/a"],
+      ["IP address", wifi.ip || "n/a"],
+      ["Address", wifi.hostname ? "http://" + wifi.hostname + ".local" : "n/a"],
     ];
   }
 
@@ -596,37 +599,93 @@
     container.appendChild(statusCard);
     els.wifiStatusRows = statusCard;
 
+    container.appendChild(wifiHostnameForm());
+
     var actions = el("div", "sas-view-actions");
     var scanBtn = el("button", "sas-btn", "Scan");
     scanBtn.addEventListener("click", runWifiScan);
     var statusText = el("span", "sas-status-text");
+    var otherBtn = el("button", "sas-btn sas-btn-quiet", "Other network...");
+    otherBtn.addEventListener("click", function () {
+      /* A hidden or out-of-range network: the SSID is typed in by hand. */
+      state.wifiSelectedSsid = null;
+      renderWifiTable();
+      els.wifiManualWrap.innerHTML = "";
+      els.wifiManualWrap.appendChild(wifiConnectForm({ ssid: "", auth_mode: 3 }, true));
+    });
     actions.appendChild(scanBtn);
+    actions.appendChild(otherBtn);
     actions.appendChild(statusText);
     container.appendChild(actions);
     els.wifiScanBtn = scanBtn;
     els.wifiStatusText = statusText;
 
+    var manualWrap = el("div");
+    container.appendChild(manualWrap);
+    els.wifiManualWrap = manualWrap;
+
     var tableWrap = el("div", "sas-table-wrap");
     container.appendChild(tableWrap);
     els.wifiTableWrap = tableWrap;
 
-    var formWrap = el("div");
-    container.appendChild(formWrap);
-    els.wifiFormWrap = formWrap;
-
-    request("GET", "/wifi/status")
-      .then(function (wifi) {
-        state.wifi = wifi;
-        updateWifiStatus();
-      })
-      .catch(function () {
-        /* the next "wifi_state" event fills it in */
-      });
+    loadWifiStatus();
 
     renderWifiTable();
     if (state.wifiResults.length === 0) {
       runWifiScan();
     }
+  }
+
+  function loadWifiStatus() {
+    request("GET", "/wifi/status")
+      .then(function (wifi) {
+        state.wifi = wifi;
+        updateWifiStatus();
+        if (els.wifiHostnameInput && !els.wifiHostnameInput.value) {
+          els.wifiHostnameInput.value = wifi.hostname || "";
+        }
+      })
+      .catch(function () {
+        /* the next "wifi_state" event fills it in */
+      });
+  }
+
+  /* The device answers at http://<name>.local, so it can be found without knowing its IP. */
+  function wifiHostnameForm() {
+    var form = el("form", "sas-form sas-card");
+    form.appendChild(el("h2", null, "Device name"));
+    var name = inputField(form, "Name (a-z, 0-9 and -; reachable as <name>.local)", "text", "off");
+    name.maxLength = 31;
+    name.value = (state.wifi && state.wifi.hostname) || "";
+    els.wifiHostnameInput = name;
+    var submit = el("button", "sas-btn", "Save name");
+    submit.type = "submit";
+    form.appendChild(submit);
+    var message = el("p", "sas-error");
+    message.setAttribute("role", "alert");
+    form.appendChild(message);
+
+    form.addEventListener("submit", function (evt) {
+      evt.preventDefault();
+      message.textContent = "";
+      submit.disabled = true;
+      var requested = name.value.trim().toLowerCase();
+      request("POST", "/wifi/hostname", { hostname: requested })
+        .then(function () {
+          name.value = requested;
+          message.className = "sas-status-text";
+          message.textContent = "Saved. The device now answers at http://" + requested + ".local";
+          loadWifiStatus();
+        })
+        .catch(function (err) {
+          message.className = "sas-error";
+          message.textContent = err.message;
+        })
+        .then(function () {
+          submit.disabled = false;
+        });
+    });
+    return form;
   }
 
   function runWifiScan() {
@@ -694,43 +753,79 @@
         appendCell(tr, ap.ssid || "(hidden)");
         tr.appendChild(document.createElement("td")).appendChild(signalBars(ap.rssi));
         appendCell(tr, (ap.auth_mode !== 0 ? "🔒 " : "") + wifiAuthModeName(ap.auth_mode));
-        var connect = el("button", "sas-btn sas-btn-quiet", "Connect");
-        connect.disabled = !ap.ssid;
+        var selected = !!ap.ssid && state.wifiSelectedSsid === ap.ssid;
+        var connect = el("button", "sas-btn sas-btn-quiet", selected ? "Cancel" : "Connect");
+        connect.disabled = !ap.ssid; /* hidden network: use "Other network..." */
         connect.addEventListener("click", function () {
-          renderWifiConnectForm(ap);
+          state.wifiSelectedSsid = selected ? null : ap.ssid;
+          els.wifiManualWrap.innerHTML = "";
+          renderWifiTable();
         });
         tr.appendChild(document.createElement("td")).appendChild(connect);
         tbody.appendChild(tr);
+
+        /* The credential form opens directly under the network it belongs to. */
+        if (selected) {
+          var formRow = document.createElement("tr");
+          formRow.className = "sas-row-form";
+          var formCell = document.createElement("td");
+          formCell.colSpan = 4;
+          formCell.appendChild(wifiConnectForm(ap, false));
+          formRow.appendChild(formCell);
+          tbody.appendChild(formRow);
+        }
       });
     table.appendChild(tbody);
     els.wifiTableWrap.appendChild(table);
   }
 
-  function renderWifiConnectForm(ap) {
-    var wrap = els.wifiFormWrap;
-    wrap.innerHTML = "";
+  /*
+   * Credential form for one network. An open network needs no password, so
+   * the field is left out; manual is the "Other network..." case, where the
+   * SSID is editable.
+   */
+  function wifiConnectForm(ap, manual) {
+    var isOpen = ap.auth_mode === 0;
 
-    var form = el("form", "sas-form sas-card");
-    form.appendChild(el("h2", null, "Connect to a network"));
-    var ssid = inputField(form, "SSID", "text", "off");
-    ssid.value = ap.ssid;
-    var pass = inputField(form, "Password", "password", "off");
+    var form = el("form", "sas-form" + (manual ? " sas-card" : ""));
+    form.appendChild(
+      el("h2", null, manual ? "Connect to another network" : "Connect to " + ap.ssid)
+    );
+    var ssid = null;
+    if (manual) {
+      ssid = inputField(form, "SSID", "text", "off");
+    }
+    var pass = isOpen ? null : inputField(form, "Password", "password", "off");
+    if (pass && manual) {
+      pass.placeholder = "leave empty for an open network";
+    }
     var submit = el("button", "sas-btn", "Connect");
     submit.type = "submit";
     form.appendChild(submit);
     var message = el("p", "sas-error");
     message.setAttribute("role", "alert");
     form.appendChild(message);
-    wrap.appendChild(form);
-    (ap.auth_mode === 0 ? submit : pass).focus();
+
+    /* Focus once the form is in the document. */
+    window.setTimeout(function () {
+      (ssid || pass || submit).focus();
+      if (form.scrollIntoView) {
+        form.scrollIntoView({ block: "nearest" });
+      }
+    }, 0);
 
     form.addEventListener("submit", function (evt) {
       evt.preventDefault();
       message.textContent = "";
       submit.disabled = true;
-      request("POST", "/wifi/connect", { ssid: ssid.value, password: pass.value })
+      request("POST", "/wifi/connect", {
+        ssid: ssid ? ssid.value : ap.ssid,
+        password: pass ? pass.value : "",
+      })
         .then(function () {
-          pass.value = "";
+          if (pass) {
+            pass.value = "";
+          }
           message.className = "sas-status-text";
           message.textContent =
             "Connecting... if the device moves to another network, reopen the dashboard there.";
@@ -743,6 +838,8 @@
           submit.disabled = false;
         });
     });
+
+    return form;
   }
 
   /* ---- BLE view ---- */

@@ -105,6 +105,7 @@ static esp_err_t handle_files_usage(httpd_req_t *req);
 static esp_err_t handle_wifi_status(httpd_req_t *req);
 static esp_err_t handle_wifi_scan(httpd_req_t *req);
 static esp_err_t handle_wifi_connect(httpd_req_t *req);
+static esp_err_t handle_wifi_hostname(httpd_req_t *req);
 static esp_err_t handle_ble_scan_start(httpd_req_t *req);
 static esp_err_t handle_ble_scan_stop(httpd_req_t *req);
 static esp_err_t handle_ble_devices(httpd_req_t *req);
@@ -194,6 +195,7 @@ sas_status_t sas_rest_api_start(void)
         {SAS_API_BASE_PATH "/wifi/status", HTTP_GET, handle_wifi_status, true},
         {SAS_API_BASE_PATH "/wifi/scan", HTTP_GET, handle_wifi_scan, true},
         {SAS_API_BASE_PATH "/wifi/connect", HTTP_POST, handle_wifi_connect, true},
+        {SAS_API_BASE_PATH "/wifi/hostname", HTTP_POST, handle_wifi_hostname, true},
         /* BLE Scanner */
         {SAS_API_BASE_PATH "/ble/scan/start", HTTP_POST, handle_ble_scan_start, true},
         {SAS_API_BASE_PATH "/ble/scan/stop", HTTP_POST, handle_ble_scan_stop, true},
@@ -810,6 +812,8 @@ static esp_err_t handle_wifi_status(httpd_req_t *req)
     cJSON_AddStringToObject(resp, "state", wifi_state_name(wifi.state));
     cJSON_AddStringToObject(resp, "ssid", wifi.ssid);
     cJSON_AddNumberToObject(resp, "rssi", wifi.rssi);
+    cJSON_AddStringToObject(resp, "ip", wifi.ip);
+    cJSON_AddStringToObject(resp, "hostname", wifi.hostname);
     send_object(req, resp);
     return ESP_OK;
 }
@@ -876,6 +880,33 @@ static esp_err_t handle_wifi_connect(httpd_req_t *req)
 
     cJSON_Delete(body);
     (void)memset(s_body, 0, sizeof(s_body)); /* held the Wi-Fi passphrase */
+    return ESP_OK;
+}
+
+/*! \brief POST /api/v1/wifi/hostname: { hostname }. Renames the device on mDNS; it then answers
+ * at "<hostname>.local". */
+static esp_err_t handle_wifi_hostname(httpd_req_t *req)
+{
+    cJSON *body = read_json_body(req);
+    if (body == NULL) {
+        return ESP_OK;
+    }
+
+    const char *hostname = require_string(req, body, "hostname", SAS_WIFI_HOSTNAME_MAX_LEN - 1U);
+    if (hostname != NULL) {
+        sas_status_t status = sas_wifi_set_hostname(hostname);
+        if (status == SAS_STATUS_OK) {
+            send_status(req, NULL, "ok");
+        } else if (status == SAS_ERR_INVALID_ARG) {
+            send_error(req, 400, "invalid_request",
+                       "hostname must be 1 to 31 characters from a-z, 0-9 and '-', and must not "
+                       "start or end with '-'");
+        } else {
+            send_error(req, 500, "internal_error", "The name could not be applied");
+        }
+    }
+
+    cJSON_Delete(body);
     return ESP_OK;
 }
 

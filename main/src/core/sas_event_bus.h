@@ -1,31 +1,25 @@
+//=============================================================================
 /*!
     \file    sas_event_bus.h
     \brief   Public interface for the Event Bus module.
-
-    \details
-    Synchronous, in-process publish/subscribe event dispatcher. Owns the
-    project-wide registry of SAS_EVENT_* IDs and the
-    subscribe/unsubscribe/publish API every module uses to decouple event
-    producers from consumers.
 */
+//=============================================================================
 
-#pragma once
+// Synchronous publish/subscribe dispatcher that lets modules exchange events
+// without depending on each other. Also defines the list of event IDs.
 
-/* 1. Standard includes */
+#ifndef SAS_EVENT_BUS_H
+#define SAS_EVENT_BUS_H
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
-/* 2. ESP-IDF includes */
-/* (none) */
-
-/* 3. Project includes */
 #include "sas_status.h"
 
-/* 4. Public types */
-
-/*! A single published event: an ID plus an optional, caller-owned payload. */
-typedef struct {
+/*! \brief A single published event: an ID plus an optional, caller-owned payload. */
+typedef struct
+{
     uint32_t event_id;   ///< One of the SAS_EVENT_* IDs below.
     const void *payload; ///< Optional payload; may be NULL.
     size_t payload_len;  ///< Payload length in bytes; 0 if payload is NULL.
@@ -39,139 +33,69 @@ typedef struct {
 */
 typedef void (*sas_event_callback_fn)(const sas_event_t *event, void *user_ctx);
 
-/*! One entry in the internal subscription table. */
-typedef struct {
+/*! \brief One entry in the internal subscription table. */
+typedef struct
+{
     uint32_t event_id;              ///< Event ID this subscription is for.
     sas_event_callback_fn callback; ///< Non-NULL callback to invoke.
     void *user_ctx;                 ///< Opaque context passed back to callback.
 } sas_event_subscription_t;
 
-/* 5. Public constants */
-
 #define SAS_EVT_ERR_BASE (0x8400U) ///< Custom sas_status_t base for this module.
-#define SAS_EVT_ERR_TABLE_FULL                                                                     \
-    (SAS_EVT_ERR_BASE +                                                                            \
-     1U) ///< subscribe() failed: SAS_EVT_MAX_SUBSCRIPTIONS entries already in use.
-#define SAS_EVT_ERR_PAYLOAD_TOO_LARGE                                                              \
-    (SAS_EVT_ERR_BASE + 2U) ///< publish() failed: payload_len exceeds SAS_EVT_MAX_PAYLOAD_LEN;
-                            ///< event was not dispatched.
+/*! \brief subscribe() failed: SAS_EVT_MAX_SUBSCRIPTIONS entries already in use. */
+#define SAS_EVT_ERR_TABLE_FULL (SAS_EVT_ERR_BASE + 1U)
+/*!
+    \brief   publish() failed: payload_len exceeds SAS_EVT_MAX_PAYLOAD_LEN;
+             event was not dispatched.
+*/
+#define SAS_EVT_ERR_PAYLOAD_TOO_LARGE (SAS_EVT_ERR_BASE + 2U)
 
-/*! Maximum concurrent subscriptions across all event IDs.
-    Placeholder sizing honoring the ">= 32" floor; to be tuned during
-    implementation against actual subscriber counts. */
+/*! \brief Maximum number of subscriptions across all event IDs. */
 #define SAS_EVT_MAX_SUBSCRIPTIONS (32U)
 
-/*! Maximum payload size, in bytes, accepted by sas_event_bus_publish().
-    Placeholder sizing; to be tuned during implementation against actual
-    event payload shapes. */
+/*! \brief Maximum payload size in bytes accepted by sas_event_bus_publish(). */
 #define SAS_EVT_MAX_PAYLOAD_LEN (256U)
 
-/*!
-    Well-known event IDs. This is the single project-wide registry; each
-    owning module appends its own SAS_EVENT_* constants here as it is
-    implemented.
-*/
-typedef enum {
-    /* Configuration Manager */
+/*! \brief Event IDs used across the project. */
+typedef enum
+{
+    // Configuration Manager
     SAS_EVENT_CONFIG_CHANGED = 1,
 
-    /* Wi-Fi Manager */
+    // Wi-Fi Manager
     SAS_EVENT_WIFI_STATE_CHANGED,
 
-    /* OTA Manager */
+    // OTA Manager
     SAS_EVENT_OTA_PROGRESS, ///< Payload is a sas_ota_progress_t (sas_ota_manager.h).
 
-    /* BLE Manager */
+    // BLE Scanner
     SAS_EVENT_BLE_DEVICE_DISCOVERED,
 
-    /* Logger */
-    SAS_EVENT_LOG_ENTRY, ///< Published by sas_log_emit_*() for each entry accepted past the
-                         ///< level filter; payload is a sas_log_entry_t (sas_logger.h).
+    // Logger
+    SAS_EVENT_LOG_ENTRY, ///< Payload is a sas_log_entry_t (sas_logger.h).
 
-    /* Authentication; none of these carry a payload (never the token or credential). */
+    // Authentication. These carry no payload, so no token or credential is
+    // exposed.
     SAS_EVENT_AUTH_LOGIN,   ///< A login succeeded and a session token was issued.
     SAS_EVENT_AUTH_LOGOUT,  ///< A session was ended by sas_auth_logout().
     SAS_EVENT_AUTH_LOCKOUT, ///< A login attempt was rejected by failed-login throttling.
-    /* Additional SAS_EVENT_* constants are appended here by each owning
-     * module as it is implemented. */
 } sas_event_id_t;
 
-/* 6. Public API declarations */
-
-/*!
-    \brief   Initialize the Event Bus module.
-    \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_STATE if already
-             initialized.
-*/
 sas_status_t sas_event_bus_init(void);
 
-/*!
-    \brief   Start active event dispatch operation.
-    \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_STATE if not
-             initialized or already started.
-*/
 sas_status_t sas_event_bus_start(void);
 
-/*!
-    \brief   Stop active event dispatch operation without releasing resources.
-    \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_STATE if not started.
-*/
 sas_status_t sas_event_bus_stop(void);
 
-/*!
-    \brief   Release all resources acquired by sas_event_bus_init().
-    \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_STATE if not
-             initialized or still started (call sas_event_bus_stop() first).
-*/
 sas_status_t sas_event_bus_deinit(void);
 
-/*!
-    \brief   Subscribe a callback to an event ID.
-    \param   event_id                 Event ID to subscribe to.
-    \param   cb                       Non-NULL callback to invoke on publish.
-    \param   user_ctx                 Opaque context passed back to cb; may be NULL.
-    \param   out_subscription_handle  Non-NULL; receives a handle usable with
-                                       sas_event_bus_unsubscribe().
-    \return  SAS_STATUS_OK; SAS_ERR_INVALID_ARG (cb or handle is NULL);
-             SAS_EVT_ERR_TABLE_FULL (table full); SAS_ERR_TIMEOUT (lock busy).
-*/
 sas_status_t sas_event_bus_subscribe(uint32_t event_id, sas_event_callback_fn cb, void *user_ctx,
                                      uint32_t *out_subscription_handle);
 
-/*!
-    \brief   Remove a previously registered subscription. Safe to call
-             from within that subscription's own callback during dispatch.
-    \param   subscription_handle Handle returned by sas_event_bus_subscribe().
-    \return  SAS_STATUS_OK; SAS_ERR_INVALID_ARG (unknown or already-removed
-             handle); SAS_ERR_TIMEOUT (lock busy).
-*/
 sas_status_t sas_event_bus_unsubscribe(uint32_t subscription_handle);
 
-/*!
-    \brief   Publish an event synchronously to every callback currently
-             subscribed to event_id.
-    \note    A subscriber may safely subscribe/unsubscribe/publish again
-             from within its own callback without deadlocking; the change
-             only affects later publish() calls, not this one.
-    \param   event_id    Event ID to publish.
-    \param   payload     Optional payload to copy to subscribers; may be NULL.
-    \param   payload_len Payload length in bytes; must be 0 if payload is NULL.
-    \return  SAS_STATUS_OK; SAS_ERR_INVALID_ARG (payload NULL, len
-             nonzero); SAS_EVT_ERR_PAYLOAD_TOO_LARGE (exceeds
-             SAS_EVT_MAX_PAYLOAD_LEN, not dispatched); SAS_ERR_TIMEOUT
-             (dispatch lock busy, not dispatched).
-*/
 sas_status_t sas_event_bus_publish(uint32_t event_id, const void *payload, size_t payload_len);
 
-/*!
-    \brief   Query whether the Event Bus is currently started and safe to
-             publish() to.
-    \note    Exists for modules earlier in the boot's Development Order
-             (e.g. Logger) that may be called before the Event Bus itself
-             has started; publish()/subscribe() otherwise assume the
-             caller already knows the Event Bus is up.
-    \return  true if sas_event_bus_start() has been called and
-             sas_event_bus_stop()/sas_event_bus_deinit() has not since;
-             false otherwise.
-*/
 bool sas_event_bus_is_started(void);
+
+#endif /* SAS_EVENT_BUS_H */

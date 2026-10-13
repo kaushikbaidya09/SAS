@@ -1,18 +1,17 @@
+//=============================================================================
 /*!
     \file    sas_ble_scanner.c
     \brief   Implementation of the BLE Scanner module.
 */
+//=============================================================================
 
-/* 1. Includes */
 #include "sas_ble_scanner.h"
 
 #include <stdbool.h>
 #include <stddef.h>
 #include <string.h>
 
-/* NimBLE calls below follow known usage patterns but aren't verified
- * against a pinned header version - check symbol names/struct fields
- * before treating this file as finished. */
+// TODO: verify the NimBLE calls below against the pinned ESP-IDF version.
 #include "esp_timer.h"
 #include "host/ble_gap.h"
 #include "host/ble_hs.h"
@@ -29,28 +28,22 @@
 
 static const char *TAG = "sas_ble";
 
-/* 2. Private macros */
-#define SAS_BLE_LOCK_WAIT_TICKS                                                                    \
-    pdMS_TO_TICKS(                                                                                 \
-        50) ///< Bounded wait for s_table_lock; critical sections are short table scans/copies.
+/*! \brief Bounded wait for s_table_lock; critical sections are short table scans/copies. */
+#define SAS_BLE_LOCK_WAIT_TICKS pdMS_TO_TICKS(50)
 
 #define SAS_BLE_MAC_LEN (6U) ///< Bytes in a BLE MAC address; matches sas_ble_device_t.mac.
 
-/* 3. Private typedefs */
-
-/*! One de-duplication table slot. */
-typedef struct {
+/*! \brief One de-duplication table slot. */
+typedef struct
+{
     bool in_use;             ///< false if this slot is free.
     sas_ble_device_t device; ///< mac/name/rssi/last_seen_us.
 } sas_ble_slot_t;
 
-/* 4. Private variables */
 static bool s_initialized = false;
-static bool s_started = false;
-/* Latches that nimble_port_freertos_init() has run: the NimBLE host task
- * is not designed to be cleanly stopped and restarted, so a later
- * sas_ble_stop()/sas_ble_start() cycle must not recreate it; only
- * sas_ble_deinit() tears it down (nimble_port_stop()). */
+static bool s_started     = false;
+// Set once the NimBLE host task has been created. The task cannot be cleanly
+// restarted, so a stop/start cycle reuses it; only sas_ble_deinit() stops it.
 static bool s_host_started = false;
 static volatile bool s_host_synced =
     false; ///< Set by on_sync() once the NimBLE host/controller are ready.
@@ -64,9 +57,8 @@ static SemaphoreHandle_t s_table_lock = NULL;
 static StaticSemaphore_t s_table_lock_storage;
 
 static uint32_t s_scan_interval_ms = 100U;
-static uint32_t s_scan_window_ms = 50U;
+static uint32_t s_scan_window_ms   = 50U;
 
-/* 5. Forward declarations */
 static void nimble_host_task(void *param);
 static void on_sync(void);
 static int gap_event_cb(struct ble_gap_event *event, void *arg);
@@ -75,11 +67,15 @@ static sas_ble_slot_t *find_by_mac(const uint8_t mac[SAS_BLE_MAC_LEN]);
 static sas_ble_slot_t *find_free_or_oldest_slot(void);
 static void load_config(void);
 
-/* 6. Public functions */
-
+/*!
+    \brief   Initialize the BLE Scanner module.
+    \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_STATE if already
+             initialized.
+*/
 sas_status_t sas_ble_init(void)
 {
-    if (s_initialized) {
+    if (s_initialized)
+    {
         return SAS_ERR_INVALID_STATE;
     }
 
@@ -90,12 +86,11 @@ sas_status_t sas_ble_init(void)
 
     load_config();
 
-    /* NimBLE (like esp_wifi) needs NVS; see sas_wifi_manager.c for the
-     * same erase-and-retry pattern. Harmless if Wi-Fi Manager already did
-     * this: BLE Scanner declares no dependency on it and must not assume
-     * a particular boot order relative to it. */
+    // NimBLE needs NVS. Wi-Fi Manager may already have initialised it, which
+    // is harmless, but this module does not rely on the boot order.
     esp_err_t err = nvs_flash_init();
-    if ((err == ESP_ERR_NVS_NO_FREE_PAGES) || (err == ESP_ERR_NVS_NEW_VERSION_FOUND)) {
+    if ((err == ESP_ERR_NVS_NO_FREE_PAGES) || (err == ESP_ERR_NVS_NEW_VERSION_FOUND))
+    {
         (void)nvs_flash_erase();
         err = nvs_flash_init();
     }
@@ -105,23 +100,34 @@ sas_status_t sas_ble_init(void)
     ble_hs_cfg.sync_cb = &on_sync;
 
     s_host_started = false;
-    s_host_synced = false;
-    s_scanning = false;
-    s_started = false;
-    s_initialized = true;
+    s_host_synced  = false;
+    s_scanning     = false;
+    s_started      = false;
+    s_initialized  = true;
     return SAS_STATUS_OK;
 }
 
+/*!
+    \brief   Start active BLE Scanner operation.
+    \return  SAS_STATUS_OK; SAS_ERR_INVALID_STATE if not initialized or already
+             started.
+*/
 sas_status_t sas_ble_start(void)
 {
-    if (!s_initialized) {
+    // Creates the NimBLE host task on the first call and reuses it afterwards.
+    // Scanning starts with sas_ble_scan_start().
+
+    if (!s_initialized)
+    {
         return SAS_ERR_INVALID_STATE;
     }
-    if (s_started) {
+    if (s_started)
+    {
         return SAS_ERR_INVALID_STATE;
     }
 
-    if (!s_host_started) {
+    if (!s_host_started)
+    {
         nimble_port_freertos_init(nimble_host_task);
         s_host_started = true;
     }
@@ -130,13 +136,21 @@ sas_status_t sas_ble_start(void)
     return SAS_STATUS_OK;
 }
 
+/*!
+    \brief   Stop active BLE Scanner operation: cancels any scan in progress.
+    \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_STATE if not started.
+*/
 sas_status_t sas_ble_stop(void)
 {
-    if (!s_started) {
+    // The NimBLE host task keeps running; only sas_ble_deinit() stops it.
+
+    if (!s_started)
+    {
         return SAS_ERR_INVALID_STATE;
     }
 
-    if (s_scanning) {
+    if (s_scanning)
+    {
         (void)ble_gap_disc_cancel();
         s_scanning = false;
     }
@@ -145,24 +159,33 @@ sas_status_t sas_ble_stop(void)
     return SAS_STATUS_OK;
 }
 
+/*!
+    \brief   Release all resources acquired by sas_ble_init(), including the
+             NimBLE host task brought up by sas_ble_start().
+    \return  SAS_STATUS_OK; SAS_ERR_INVALID_STATE if not initialized or still
+             started (call sas_ble_stop() first).
+*/
 sas_status_t sas_ble_deinit(void)
 {
-    if (!s_initialized) {
+    if (!s_initialized)
+    {
         return SAS_ERR_INVALID_STATE;
     }
-    if (s_started) {
+    if (s_started)
+    {
         return SAS_ERR_INVALID_STATE;
     }
 
-    if (s_host_started) {
-        /* nimble_port_stop() causes nimble_port_run() to return inside
-         * nimble_host_task(), which then calls
-         * nimble_port_freertos_deinit() itself; calling that here instead
-         * would run it from the wrong task context. */
+    if (s_host_started)
+    {
+        // nimble_port_stop() makes nimble_host_task() return, and that task
+        // then calls nimble_port_freertos_deinit() itself. Calling it here
+        // would run it on the wrong task.
         (void)nimble_port_stop();
         s_host_started = false;
     }
-    if (s_table_lock != NULL) {
+    if (s_table_lock != NULL)
+    {
         vSemaphoreDelete(s_table_lock);
         s_table_lock = NULL;
     }
@@ -173,31 +196,43 @@ sas_status_t sas_ble_deinit(void)
     return SAS_STATUS_OK;
 }
 
+/*!
+    \brief   Begin passive (observer-only) BLE advertisement scanning.
+    \return  SAS_STATUS_OK; SAS_ERR_INVALID_STATE (not started);
+             SAS_BLE_ERR_ALREADY_SCANNING (scan already running);
+             SAS_BLE_ERR_SCAN_FAILED (NimBLE driver rejected the request).
+*/
 sas_status_t sas_ble_scan_start(void)
 {
-    if (!s_started) {
+    if (!s_started)
+    {
         return SAS_ERR_INVALID_STATE;
     }
-    if (s_scanning) {
+    if (s_scanning)
+    {
         return SAS_BLE_ERR_ALREADY_SCANNING;
     }
-    if (!s_host_synced) {
-        return SAS_BLE_ERR_SCAN_FAILED; /* host/controller not ready yet */
+    if (!s_host_synced)
+    {
+        return SAS_BLE_ERR_SCAN_FAILED; // host/controller not ready yet
     }
 
     uint8_t own_addr_type;
-    if (ble_hs_id_infer_auto(0, &own_addr_type) != 0) {
+    if (ble_hs_id_infer_auto(0, &own_addr_type) != 0)
+    {
         return SAS_BLE_ERR_SCAN_FAILED;
     }
 
     struct ble_gap_disc_params disc_params;
     (void)memset(&disc_params, 0, sizeof(disc_params));
-    disc_params.passive = 1; /* SAS-BLE-NFR-002 / observer-only: never send scan requests */
-    disc_params.filter_duplicates = 0; /* de-dup ourselves so rssi/last_seen_us keep updating */
-    disc_params.itvl = (uint16_t)((s_scan_interval_ms * 1000U) / 625U); /* ms -> 0.625ms units */
-    disc_params.window = (uint16_t)((s_scan_window_ms * 1000U) / 625U); /* ms -> 0.625ms units */
+    disc_params.passive = 1; // passive: never send scan requests (SAS-BLE-NFR-002)
+    disc_params.filter_duplicates =
+        0; // duplicates are merged here so RSSI and last-seen keep updating
+    disc_params.itvl   = (uint16_t)((s_scan_interval_ms * 1000U) / 625U); // ms to 0.625 ms units
+    disc_params.window = (uint16_t)((s_scan_window_ms * 1000U) / 625U);   // ms -> 0.625ms units
 
-    if (ble_gap_disc(own_addr_type, BLE_HS_FOREVER, &disc_params, &gap_event_cb, NULL) != 0) {
+    if (ble_gap_disc(own_addr_type, BLE_HS_FOREVER, &disc_params, &gap_event_cb, NULL) != 0)
+    {
         return SAS_BLE_ERR_SCAN_FAILED;
     }
 
@@ -205,12 +240,19 @@ sas_status_t sas_ble_scan_start(void)
     return SAS_STATUS_OK;
 }
 
+/*!
+    \brief   Stop BLE advertisement scanning.
+    \return  SAS_STATUS_OK; SAS_ERR_INVALID_STATE (not started);
+             SAS_BLE_ERR_NOT_SCANNING (no scan in progress).
+*/
 sas_status_t sas_ble_scan_stop(void)
 {
-    if (!s_started) {
+    if (!s_started)
+    {
         return SAS_ERR_INVALID_STATE;
     }
-    if (!s_scanning) {
+    if (!s_scanning)
+    {
         return SAS_BLE_ERR_NOT_SCANNING;
     }
 
@@ -219,23 +261,38 @@ sas_status_t sas_ble_scan_stop(void)
     return SAS_STATUS_OK;
 }
 
+/*!
+    \brief   Copy out the current de-duplicated advertiser table.
+    \param[out] out_array    Non-NULL destination array of at least max_entries
+                             elements.
+    \param[in]  max_entries  Capacity of out_array, in entries.
+    \param[out] out_count    Non-NULL; receives the number of entries written.
+    \return  SAS_STATUS_OK; SAS_ERR_INVALID_ARG (bad args);
+             SAS_ERR_INVALID_STATE (not initialized); SAS_ERR_TIMEOUT (lock
+             busy - *out_count left unset).
+*/
 sas_status_t sas_ble_get_devices(sas_ble_device_t *out_array, uint16_t max_entries,
                                  uint16_t *out_count)
 {
-    if ((out_array == NULL) || (out_count == NULL)) {
+    if ((out_array == NULL) || (out_count == NULL))
+    {
         return SAS_ERR_INVALID_ARG;
     }
-    if (!s_initialized) {
+    if (!s_initialized)
+    {
         return SAS_ERR_INVALID_STATE;
     }
 
-    if (xSemaphoreTake(s_table_lock, SAS_BLE_LOCK_WAIT_TICKS) != pdTRUE) {
+    if (xSemaphoreTake(s_table_lock, SAS_BLE_LOCK_WAIT_TICKS) != pdTRUE)
+    {
         return SAS_ERR_TIMEOUT;
     }
 
     uint16_t count = 0U;
-    for (size_t i = 0U; (i < s_max_devices) && (count < max_entries); i++) {
-        if (s_table[i].in_use) {
+    for (size_t i = 0U; (i < s_max_devices) && (count < max_entries); i++)
+    {
+        if (s_table[i].in_use)
+        {
             out_array[count] = s_table[i].device;
             count++;
         }
@@ -246,16 +303,16 @@ sas_status_t sas_ble_get_devices(sas_ble_device_t *out_array, uint16_t max_entri
     return SAS_STATUS_OK;
 }
 
-/* 7. Private functions */
-
-/*! \brief Load ble.scan.interval_ms / ble.scan.window_ms / ble.max_devices. Caller: sas_ble_init(),
- * before s_initialized is set. */
+/*!
+    \brief   Load ble.scan.interval_ms / ble.scan.window_ms / ble.max_devices.
+             Caller: sas_ble_init(), before s_initialized is set.
+*/
 static void load_config(void)
 {
     sas_config_value_t val;
     sas_config_value_t def;
 
-    def.type = SAS_CFG_TYPE_INT;
+    def.type          = SAS_CFG_TYPE_INT;
     def.value.int_val = (int32_t)s_scan_interval_ms;
     (void)sas_config_get("ble.scan.interval_ms", &val, &def);
     s_scan_interval_ms = (uint32_t)val.value.int_val;
@@ -271,8 +328,11 @@ static void load_config(void)
         ((requested > 0U) && (requested <= SAS_BLE_MAX_DEVICES)) ? requested : SAS_BLE_MAX_DEVICES;
 }
 
-/*! \brief FreeRTOS entry point for nimble_port_freertos_init(): runs NimBLE's host loop until
- * nimble_port_stop() returns it, then tears the task down. */
+/*!
+    \brief   FreeRTOS entry point for nimble_port_freertos_init(): runs
+             NimBLE's host loop until nimble_port_stop() returns it, then tears
+             the task down.
+*/
 static void nimble_host_task(void *param)
 {
     (void)param;
@@ -280,40 +340,54 @@ static void nimble_host_task(void *param)
     nimble_port_freertos_deinit();
 }
 
-/*! \brief NimBLE host/controller sync callback, registered via ble_hs_cfg.sync_cb in
- * sas_ble_init(). Runs on the NimBLE host task. */
+/*!
+    \brief   NimBLE host/controller sync callback, registered via
+             ble_hs_cfg.sync_cb in sas_ble_init(). Runs on the NimBLE host
+             task.
+*/
 static void on_sync(void)
 {
     s_host_synced = true;
 }
 
-/*! \brief Find the in-use slot for mac among the first s_max_devices slots, or NULL. Caller holds
- * s_table_lock. */
+/*!
+    \brief   Find the in-use slot for mac among the first s_max_devices slots,
+             or NULL. Caller holds s_table_lock.
+*/
 static sas_ble_slot_t *find_by_mac(const uint8_t mac[SAS_BLE_MAC_LEN])
 {
-    for (size_t i = 0U; i < s_max_devices; i++) {
-        if (s_table[i].in_use && (memcmp(s_table[i].device.mac, mac, SAS_BLE_MAC_LEN) == 0)) {
+    for (size_t i = 0U; i < s_max_devices; i++)
+    {
+        if (s_table[i].in_use && (memcmp(s_table[i].device.mac, mac, SAS_BLE_MAC_LEN) == 0))
+        {
             return &s_table[i];
         }
     }
     return NULL;
 }
 
-/*! \brief First free slot among the first s_max_devices, or the least-recently-seen in-use one
- * (SAS-BLE-NFR-001). Caller holds s_table_lock. */
+/*!
+    \brief   First free slot among the first s_max_devices, or the
+             least-recently-seen in-use one (SAS-BLE-NFR-001). Caller holds
+             s_table_lock.
+*/
 static sas_ble_slot_t *find_free_or_oldest_slot(void)
 {
-    for (size_t i = 0U; i < s_max_devices; i++) {
-        if (!s_table[i].in_use) {
+    for (size_t i = 0U; i < s_max_devices; i++)
+    {
+        if (!s_table[i].in_use)
+        {
             return &s_table[i];
         }
     }
 
     size_t oldest_index = 0U;
     int64_t oldest_time = s_table[0].device.last_seen_us;
-    for (size_t i = 1U; i < s_max_devices; i++) {
-        if (s_table[i].device.last_seen_us < oldest_time) {
-            oldest_time = s_table[i].device.last_seen_us;
+    for (size_t i = 1U; i < s_max_devices; i++)
+    {
+        if (s_table[i].device.last_seen_us < oldest_time)
+        {
+            oldest_time  = s_table[i].device.last_seen_us;
             oldest_index = i;
         }
     }
@@ -321,66 +395,78 @@ static sas_ble_slot_t *find_free_or_oldest_slot(void)
 }
 
 /*!
-    \brief   De-dup one advertisement by MAC: update rssi/last_seen_us for
-             a known MAC, or insert (evicting the oldest if full) and
-             publish SAS_EVENT_BLE_DEVICE_DISCOVERED for a new one.
-    \param   name Advertised name, or "" if none present; empty never
-                  overwrites a previously recorded name.
+    \brief   De-dup one advertisement by MAC: update rssi/last_seen_us for a
+             known MAC, or insert (evicting the oldest if full) and publish
+             SAS_EVENT_BLE_DEVICE_DISCOVERED for a new one.
 */
 static void record_advertisement(const uint8_t mac[SAS_BLE_MAC_LEN], const char *name, int8_t rssi)
 {
+    // name is the advertised name, or "" if there is none. An empty name never
+    // replaces a stored one.
+
     int64_t now_us = esp_timer_get_time();
-    bool is_new = false;
+    bool is_new    = false;
     sas_ble_device_t snapshot;
     (void)memset(&snapshot, 0, sizeof(snapshot));
 
-    if (xSemaphoreTake(s_table_lock, SAS_BLE_LOCK_WAIT_TICKS) == pdTRUE) {
+    if (xSemaphoreTake(s_table_lock, SAS_BLE_LOCK_WAIT_TICKS) == pdTRUE)
+    {
         sas_ble_slot_t *slot = find_by_mac(mac);
-        if (slot == NULL) {
+        if (slot == NULL)
+        {
             slot = find_free_or_oldest_slot();
             (void)memset(slot, 0, sizeof(*slot));
             (void)memcpy(slot->device.mac, mac, SAS_BLE_MAC_LEN);
             slot->in_use = true;
-            is_new = true;
+            is_new       = true;
         }
 
-        if (name[0] != '\0') {
+        if (name[0] != '\0')
+        {
             (void)strncpy(slot->device.name, name, sizeof(slot->device.name) - 1U);
             slot->device.name[sizeof(slot->device.name) - 1U] = '\0';
         }
-        slot->device.rssi = rssi;
+        slot->device.rssi         = rssi;
         slot->device.last_seen_us = now_us;
-        snapshot = slot->device;
+        snapshot                  = slot->device;
 
         xSemaphoreGive(s_table_lock);
     }
 
-    if (is_new) {
+    if (is_new)
+    {
         sas_status_t publish_status =
             sas_event_bus_publish(SAS_EVENT_BLE_DEVICE_DISCOVERED, &snapshot, sizeof(snapshot));
-        if (publish_status != SAS_STATUS_OK) {
+        if (publish_status != SAS_STATUS_OK)
+        {
             sas_log_warn("SAS_EVENT_BLE_DEVICE_DISCOVERED publish failed (0x%x)",
                          (unsigned int)publish_status);
         }
     }
 }
 
-/*! \brief NimBLE GAP callback for ble_gap_disc(); runs on the host task. Only handles
- * BLE_GAP_EVENT_DISC, since this module never initiates a connection (SAS-BLE-NFR-002). */
+/*!
+    \brief   NimBLE GAP callback for ble_gap_disc(); runs on the host task.
+             Only handles BLE_GAP_EVENT_DISC, since this module never initiates
+             a connection (SAS-BLE-NFR-002).
+*/
 static int gap_event_cb(struct ble_gap_event *event, void *arg)
 {
     (void)arg;
 
-    if (event->type != BLE_GAP_EVENT_DISC) {
+    if (event->type != BLE_GAP_EVENT_DISC)
+    {
         return 0;
     }
 
     const struct ble_gap_disc_desc *disc = &event->disc;
-    char name[32] = {0};
+    char name[32]                        = {0};
 
     struct ble_hs_adv_fields fields;
-    if (ble_hs_adv_parse_fields(&fields, disc->data, disc->length_data) == 0) {
-        if ((fields.name != NULL) && (fields.name_len > 0U)) {
+    if (ble_hs_adv_parse_fields(&fields, disc->data, disc->length_data) == 0)
+    {
+        if ((fields.name != NULL) && (fields.name_len > 0U))
+        {
             size_t len =
                 (fields.name_len < (sizeof(name) - 1U)) ? fields.name_len : (sizeof(name) - 1U);
             (void)memcpy(name, fields.name, len);

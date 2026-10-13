@@ -6,7 +6,10 @@
 # Directory
 .directory
 .vscode
-docs
+# Project documents stay local; the coding standard and build tooling are tracked.
+docs/*
+!docs/tools/
+!docs/CODING_STANDARD.md
 
 # Temporary files
 *~

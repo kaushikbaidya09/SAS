@@ -445,6 +445,84 @@ sas_status_t sas_auth_change_credential(const char *current_password, const char
 }
 
 /*!
+    \brief   Change the login user name, verifying the current password first.
+             On success every existing session is invalidated.
+    \param[in] current_password  Non-NULL current plaintext password; never
+                                 persisted (see sas_auth_login()).
+    \param[in] new_username      Non-NULL new user name of 1 to
+                                 SAS_AUTH_MAX_USERNAME_LEN characters from
+                                 letters, digits, '.', '_' and '-'.
+    \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_ARG if any argument is
+             NULL or new_username is not a valid name; SAS_ERR_INVALID_STATE if
+             not started; SAS_AUTH_ERR_INVALID_CREDENTIAL if current_password
+             is wrong.
+*/
+sas_status_t sas_auth_change_username(const char *current_password, const char *new_username)
+{
+    if ((current_password == NULL) || (new_username == NULL))
+    {
+        return SAS_ERR_INVALID_ARG;
+    }
+
+    size_t new_len = strlen(new_username);
+    if ((new_len == 0U) || (new_len > SAS_AUTH_MAX_USERNAME_LEN))
+    {
+        return SAS_ERR_INVALID_ARG;
+    }
+    for (size_t i = 0U; i < new_len; i++)
+    {
+        char c       = new_username[i];
+        bool allowed = ((c >= 'a') && (c <= 'z')) || ((c >= 'A') && (c <= 'Z')) ||
+                       ((c >= '0') && (c <= '9')) || (c == '.') || (c == '_') || (c == '-');
+        if (!allowed)
+        {
+            return SAS_ERR_INVALID_ARG;
+        }
+    }
+
+    if (!s_started)
+    {
+        return SAS_ERR_INVALID_STATE;
+    }
+    if (xSemaphoreTake(s_lock, SAS_AUTH_LOCK_WAIT_TICKS) != pdTRUE)
+    {
+        return SAS_ERR_TIMEOUT;
+    }
+
+    sas_status_t status = verify_password(current_password);
+    if (status == SAS_STATUS_OK)
+    {
+        status = set_string_config("auth.username", new_username);
+    }
+    if (status == SAS_STATUS_OK)
+    {
+        // The user name is half of the credential: sessions end as for a password change.
+        wipe(s_sessions, sizeof(s_sessions));
+    }
+
+    xSemaphoreGive(s_lock);
+    return status;
+}
+
+/*!
+    \brief   Copy out the current login user name.
+    \param[out] out      Non-NULL destination for the NUL-terminated name.
+    \param[in]  out_len  Capacity of out in bytes (33 holds any user name).
+    \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_ARG if out is NULL or
+             out_len is 0.
+*/
+sas_status_t sas_auth_get_username(char *out, size_t out_len)
+{
+    if ((out == NULL) || (out_len == 0U))
+    {
+        return SAS_ERR_INVALID_ARG;
+    }
+
+    get_string_config("auth.username", SAS_AUTH_DEFAULT_USERNAME, out, out_len);
+    return SAS_STATUS_OK;
+}
+
+/*!
     \brief   Read the auth.x tuning keys. Caller: sas_auth_init().
 */
 static void load_config(void)

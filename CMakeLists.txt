@@ -2,23 +2,12 @@
 # @file    CMakeLists.txt
 # @brief   Build script for the ESP32-S3 Swiss Army Server (SAS) firmware.
 #
-# The build uses GNU Make ("Unix Makefiles"), not Ninja. The generator is
-# chosen when the build directory is first configured, and idf.py reuses it
-# from then on, so only that first run needs -G:
+# Built with GNU Make, not Ninja. The first build selects it, later builds
+# reuse it:  idf.py -G "Unix Makefiles" build   (tools/run.sh does this)
 #
-#   idf.py -G "Unix Makefiles" build
-#
-# Usage:
-#   idf.py build            Build the firmware with ESP-IDF (formats the
-#                           sources first)
-#   cmake --build build --target check
-#                           Run cppcheck static analysis (fails on findings)
-#   cmake --build build --target format
-#                           Reformat sources with clang-format (also runs
-#                           automatically before every build)
-#   cmake --build build --target docs
-#                           Generate Doxygen HTML into build/docs/html
-#   idf.py fullclean        Remove build output
+#   cmake --build build --target check    cppcheck, fails on any finding
+#   cmake --build build --target format   clang-format + Prettier (runs before builds)
+#   cmake --build build --target docs     Doxygen HTML in build/docs/html
 #==============================================================================
 
 cmake_minimum_required(VERSION 3.16)
@@ -51,12 +40,6 @@ set(PROJECT_VER ${FW_VERSION})
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(SAS)
-
-littlefs_create_partition_image(
-    littlefs
-    littlefs_data
-    FLASH_IN_PROJECT
-)
 
 set(PROJECT_DESCRIPTION "ESP32-S3 Swiss Army Server")
 set(SRCDIR      ${CMAKE_SOURCE_DIR}/main/src)
@@ -116,7 +99,7 @@ else()
 endif()
 
 add_custom_target(format
-    COMMAND ${CMAKE_SOURCE_DIR}/docs/tools/format.sh
+    COMMAND ${CMAKE_SOURCE_DIR}/tools/format.sh
     VERBATIM
 )
 
@@ -131,7 +114,7 @@ else()
                     "during the build")
 endif()
 
-configure_file(docs/tools/Doxyfile.in ${CMAKE_BINARY_DIR}/Doxyfile @ONLY)
+configure_file(tools/config/Doxyfile.in ${CMAKE_BINARY_DIR}/Doxyfile @ONLY)
 
 find_program(DOXYGEN doxygen)
 if(DOXYGEN)

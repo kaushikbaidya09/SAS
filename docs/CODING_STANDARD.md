@@ -21,11 +21,12 @@ SAS/
 │   │                   storage, web, terminal, auth); one .c/.h pair per module
 │   ├── certs/          Development TLS certificate and key
 │   └── CMakeLists.txt  ESP-IDF component registration
-├── littlefs_data/      Web dashboard, flashed as the LittleFS image
+├── web/                Web dashboard, built into the firmware image
+├── tools/              run.sh, format.sh, gzip_web.py
+│   └── config/         .clang-format, .prettierrc, Doxyfile.in
 ├── partitions/         Partition table
 ├── templates/          Blank module templates to copy
 ├── docs/               Standards, design notes
-│   └── tools/          format.sh, .clang-format, Doxyfile.in
 ├── tests/              PC-side unit tests (Unity / CMock / Ceedling);
 │                       create it with your first test
 ├── CMakeLists.txt
@@ -200,7 +201,7 @@ Rules:
 - Allman braces (brace on its own line).
 - One declaration per line.
 - Space after keywords: `if (`, `for (`, `while (`.
-- Enforce automatically with `clang-format` (see `docs/tools/.clang-format`); run `docs/tools/format.sh`. The build runs it automatically.
+- Enforce automatically with `clang-format` (see `tools/config/.clang-format`); run `tools/format.sh`. The build runs it automatically.
 
 ---
 
@@ -211,7 +212,7 @@ Rules:
 | Documentation | Doxygen (`docs` CMake target) |
 | Static analysis | cppcheck (`check` CMake target), PC-lint Plus, Polyspace, Parasoft |
 | MISRA checking | cppcheck `--addon=misra`, PC-lint Plus, LDRA |
-| Formatting | clang-format (`docs/tools/format.sh`, or the `format` CMake target) |
+| Formatting | clang-format for C, Prettier (`tools/config/.prettierrc`) for `web/`; both via `tools/format.sh` or the `format` CMake target |
 | Unit tests | Unity, CMock, Ceedling |
 | Warnings | `-Wall -Wextra -Werror -Wconversion -Wshadow` |
 
@@ -235,5 +236,5 @@ Rules:
 3. Every public and private name carries the module prefix (section 6).
 4. Every public function validates its parameters and has a full function
    header; static functions and ISRs have `\brief` only (section 4).
-5. The build has no warnings, `docs/tools/format.sh --check` passes, and the `check`
+5. The build has no warnings, `tools/format.sh --check` passes, and the `check`
    and `docs` targets are clean.

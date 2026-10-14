@@ -1,0 +1,1094 @@
+/*
+ * SAS Dashboard styles.
+ *
+ * Minimal light and dark themes (system choice, or the header's theme
+ * button). Layout:
+ *   >= 900px  sidebar with grouped navigation, content beside it
+ *   <  900px  top bar, and a bottom tab bar whose "More" button opens the
+ *             remaining views in a sheet
+ *   <  640px  tables turn into stacked cards (see labelCells() in
+ *             dashboard.js)
+ */
+
+/* ---- theme ---- */
+
+:root {
+    --bg: #f5f6f8;
+    --surface: #ffffff;
+    --surface-2: #f0f2f5;
+    --text: #15171c;
+    --text-dim: #6b7280;
+    --line: #e4e7ec;
+    --accent: #2563eb;
+    --accent-soft: rgba(37, 99, 235, 0.1);
+    --accent-text: #ffffff;
+    --ok: #15803d;
+    --warn: #b45309;
+    --err: #dc2626;
+    --err-soft: rgba(220, 38, 38, 0.1);
+    --shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.08);
+    --radius: 14px;
+    --radius-sm: 9px;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) {
+        --bg: #0e1013;
+        --surface: #16191e;
+        --surface-2: #1e2228;
+        --text: #e7e9ee;
+        --text-dim: #8b93a1;
+        --line: #262b33;
+        --accent: #5b93ff;
+        --accent-soft: rgba(91, 147, 255, 0.14);
+        --ok: #4ade80;
+        --warn: #fbbf24;
+        --err: #f87171;
+        --err-soft: rgba(248, 113, 113, 0.12);
+        --shadow: none;
+        color-scheme: dark;
+    }
+}
+
+:root[data-theme='dark'] {
+    --bg: #0e1013;
+    --surface: #16191e;
+    --surface-2: #1e2228;
+    --text: #e7e9ee;
+    --text-dim: #8b93a1;
+    --line: #262b33;
+    --accent: #5b93ff;
+    --accent-soft: rgba(91, 147, 255, 0.14);
+    --ok: #4ade80;
+    --warn: #fbbf24;
+    --err: #f87171;
+    --err-soft: rgba(248, 113, 113, 0.12);
+    --shadow: none;
+    color-scheme: dark;
+}
+
+/* ---- base ---- */
+
+* {
+    box-sizing: border-box;
+}
+
+html {
+    -webkit-text-size-adjust: 100%;
+}
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font:
+        15px/1.5 system-ui,
+        -apple-system,
+        'Segoe UI',
+        Roboto,
+        sans-serif;
+}
+
+[hidden] {
+    display: none !important;
+}
+
+h1 {
+    margin: 0 0 20px;
+    font-size: 24px;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+}
+
+h2 {
+    margin: 0 0 14px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+}
+
+p {
+    margin: 0;
+}
+
+:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+.sas-icon {
+    width: 20px;
+    height: 20px;
+    flex: none;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+/* ---- shell ---- */
+
+.sas-shell {
+    min-height: 100vh;
+}
+
+.sas-sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: 232px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 20px 14px 16px;
+    background: var(--surface);
+    border-right: 1px solid var(--line);
+    z-index: 10;
+}
+
+.sas-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 8px 12px;
+    min-width: 0;
+}
+
+.sas-brand-mark {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    flex: none;
+    border-radius: 9px;
+    background: var(--accent);
+    color: var(--accent-text);
+}
+
+.sas-brand-mark .sas-icon {
+    width: 18px;
+    height: 18px;
+}
+
+.sas-title {
+    font-weight: 650;
+    line-height: 1.2;
+}
+
+.sas-subtitle {
+    font-size: 12px;
+    color: var(--text-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.sas-nav {
+    flex: 1;
+    overflow-y: auto;
+}
+
+.sas-nav-group {
+    margin: 14px 10px 6px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+}
+
+.sas-nav ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 2px;
+}
+
+.sas-nav a,
+.sas-more-btn {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 9px 10px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text-dim);
+    font: inherit;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.sas-nav a:hover,
+.sas-more-btn:hover {
+    background: var(--surface-2);
+    color: var(--text);
+}
+
+.sas-nav a[aria-current='page'] {
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.sas-more-item,
+.sas-scrim {
+    display: none;
+}
+
+.sas-tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding: 12px 4px 0;
+    border-top: 1px solid var(--line);
+}
+
+.sas-conn {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex: 1 1 100%;
+    padding: 0 6px 4px;
+    min-width: 0;
+    font-size: 13px;
+    color: var(--text-dim);
+}
+
+.sas-conn-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.sas-conn-dot {
+    width: 8px;
+    height: 8px;
+    flex: none;
+    border-radius: 50%;
+    background: var(--err);
+}
+
+.sas-conn[data-state='connected'] .sas-conn-dot {
+    background: var(--ok);
+}
+
+.sas-conn[data-state='connecting'] .sas-conn-dot {
+    background: var(--warn);
+}
+
+.sas-icon-btn {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    flex: none;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--text-dim);
+    cursor: pointer;
+}
+
+.sas-auth-btn {
+    margin-left: auto;
+    min-height: 34px;
+    padding: 6px 14px;
+}
+
+.sas-icon-btn:hover {
+    background: var(--surface-2);
+    color: var(--text);
+}
+
+.sas-main {
+    margin-left: 232px;
+    padding: 32px clamp(16px, 4vw, 48px) 48px;
+}
+
+.sas-view {
+    max-width: 1080px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.sas-view > h1 {
+    margin-bottom: 4px;
+}
+
+.sas-view-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 10px;
+}
+
+.sas-view-actions h1 {
+    flex: 1;
+    margin: 0;
+}
+
+/* ---- cards ---- */
+
+.sas-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
+    gap: 16px;
+    align-items: start;
+}
+
+.sas-card {
+    min-width: 0;
+    padding: 18px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+}
+
+.sas-card > p:not(.sas-error):not(.sas-status-text) {
+    margin-bottom: 14px;
+}
+
+.sas-card-action {
+    margin-top: 14px;
+}
+
+.sas-rows {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 10px 16px;
+    margin: 0;
+}
+
+.sas-rows dt {
+    color: var(--text-dim);
+}
+
+.sas-rows dd {
+    margin: 0;
+    text-align: right;
+    overflow-wrap: anywhere;
+}
+
+.sas-rows dd[data-status]::before {
+    content: '';
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    margin-right: 7px;
+    border-radius: 50%;
+    background: currentColor;
+    vertical-align: 1px;
+}
+
+.sas-rows dd[data-status='ok'],
+.sas-rows dd[data-status='connected'],
+.sas-rows dd[data-status='ready_to_reboot'] {
+    color: var(--ok);
+}
+
+.sas-rows dd[data-status='failed'] {
+    color: var(--err);
+}
+
+.sas-rows dd[data-status='skipped_dependency'],
+.sas-rows dd[data-status='connecting'],
+.sas-rows dd[data-status='reconnecting'],
+.sas-rows dd[data-status='ap_fallback'],
+.sas-rows dd[data-status='receiving'],
+.sas-rows dd[data-status='verifying'] {
+    color: var(--warn);
+}
+
+/* ---- buttons ---- */
+
+.sas-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 38px;
+    padding: 8px 16px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: var(--accent);
+    color: var(--accent-text);
+    font: inherit;
+    font-weight: 550;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.sas-btn:hover {
+    filter: brightness(1.08);
+}
+
+.sas-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+    filter: none;
+}
+
+.sas-btn-quiet {
+    background: var(--surface-2);
+    border-color: var(--line);
+    color: var(--text);
+}
+
+.sas-btn-danger {
+    background: var(--err-soft);
+    color: var(--err);
+}
+
+.sas-busy::before {
+    content: '';
+    width: 14px;
+    height: 14px;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: sas-spin 0.8s linear infinite;
+}
+
+@keyframes sas-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.sas-link {
+    padding: 2px 4px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: var(--accent);
+    font: inherit;
+    cursor: pointer;
+}
+
+.sas-link:hover {
+    background: var(--accent-soft);
+}
+
+/* ---- forms ---- */
+
+.sas-form {
+    display: grid;
+    gap: 14px;
+    align-content: start;
+}
+
+.sas-form h2 {
+    margin: 0;
+}
+
+.sas-form > .sas-btn {
+    justify-self: start;
+}
+
+.sas-field {
+    display: grid;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--text-dim);
+}
+
+input[type='text'],
+input[type='password'],
+input[type='url'],
+input[type='file'],
+select {
+    width: 100%;
+    min-height: 40px;
+    padding: 8px 12px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: var(--surface-2);
+    color: var(--text);
+    font: inherit;
+}
+
+input[type='file'] {
+    padding: 6px;
+}
+
+input[type='file']::file-selector-button {
+    margin-right: 10px;
+    padding: 6px 12px;
+    border: 0;
+    border-radius: 7px;
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+    cursor: pointer;
+}
+
+input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+input::placeholder {
+    color: var(--text-dim);
+    opacity: 0.7;
+}
+
+.sas-check {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+}
+
+.sas-check input {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--accent);
+}
+
+.sas-error {
+    color: var(--err);
+    font-size: 13px;
+}
+
+.sas-error:empty {
+    display: none;
+}
+
+.sas-status-text {
+    color: var(--text-dim);
+    font-size: 13px;
+}
+
+.sas-progress {
+    width: 100%;
+    height: 6px;
+    border: 0;
+    border-radius: 3px;
+    background: var(--surface-2);
+    overflow: hidden;
+    appearance: none;
+}
+
+.sas-progress::-webkit-progress-bar {
+    background: var(--surface-2);
+}
+
+.sas-progress::-webkit-progress-value {
+    background: var(--accent);
+    border-radius: 3px;
+}
+
+.sas-progress::-moz-progress-bar {
+    background: var(--accent);
+    border-radius: 3px;
+}
+
+/* ---- tables ---- */
+
+.sas-table-wrap {
+    overflow-x: auto;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+}
+
+.sas-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.sas-table th {
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--line);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-align: left;
+    text-transform: uppercase;
+    color: var(--text-dim);
+}
+
+.sas-table td {
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: middle;
+}
+
+.sas-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.sas-table tbody tr:hover td {
+    background: var(--surface-2);
+}
+
+.sas-table td input[type='text'] {
+    min-height: 34px;
+}
+
+.sas-sort {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+    cursor: pointer;
+}
+
+.sas-row-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+}
+
+.sas-row-actions .sas-btn,
+.sas-table td > .sas-btn {
+    min-height: 32px;
+    padding: 5px 12px;
+    font-size: 13px;
+}
+
+.sas-table tr.sas-row-form td,
+.sas-table tr.sas-row-form:hover td {
+    background: var(--surface-2);
+}
+
+.sas-row-form .sas-form {
+    max-width: 420px;
+    padding: 4px 0;
+}
+
+.sas-bars {
+    display: inline-flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 14px;
+    vertical-align: -2px;
+}
+
+.sas-bars span {
+    width: 4px;
+    border-radius: 1px;
+    background: var(--line);
+}
+
+.sas-bars span.on {
+    background: var(--accent);
+}
+
+.sas-empty {
+    padding: 32px 16px;
+    border: 1px dashed var(--line);
+    border-radius: var(--radius);
+    color: var(--text-dim);
+    text-align: center;
+}
+
+/* ---- Files ---- */
+
+.sas-usage {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 6px 12px;
+}
+
+.sas-usage .sas-progress {
+    grid-column: 1 / -1;
+}
+
+.sas-usage .sas-status-text:first-of-type {
+    display: none; /* the percentage; the "used of" line says enough */
+}
+
+.sas-crumbs {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px;
+    font-size: 14px;
+}
+
+/* ---- Logs and Terminal ---- */
+
+.sas-log-pane {
+    height: calc(100vh - 210px);
+    min-height: 280px;
+    overflow: auto;
+    padding: 12px 14px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    font: 12.5px/1.6 var(--mono);
+}
+
+.sas-log-line {
+    display: flex;
+    gap: 10px;
+    padding: 1px 0;
+    overflow-wrap: anywhere;
+}
+
+.sas-log-ts {
+    flex: none;
+    color: var(--text-dim);
+}
+
+.sas-log-tag {
+    flex: none;
+    color: var(--text-dim);
+}
+
+.sas-pill {
+    flex: none;
+    min-width: 52px;
+    font-weight: 600;
+}
+
+.sas-pill[data-level='ERROR'] {
+    color: var(--err);
+}
+
+.sas-pill[data-level='WARN'] {
+    color: var(--warn);
+}
+
+.sas-pill[data-level='INFO'] {
+    color: var(--accent);
+}
+
+.sas-pill[data-level='DEBUG'],
+.sas-pill[data-level='VERBOSE'] {
+    color: var(--text-dim);
+}
+
+.sas-term-pane {
+    height: calc(100vh - 270px);
+    background: #0b0d10;
+    border-color: #0b0d10;
+    color: #d6dae1;
+}
+
+.sas-term-line {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.sas-term-cmd {
+    color: #7fb3ff;
+}
+
+.sas-term-note {
+    color: #8b93a1;
+    font-style: italic;
+}
+
+.sas-term-input {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 6px 6px 14px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    font-family: var(--mono);
+}
+
+.sas-term-input span {
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.sas-term-input input {
+    border: 0;
+    background: none;
+    font-family: var(--mono);
+}
+
+.sas-term-input input:focus {
+    box-shadow: none;
+}
+
+/* ---- Login ---- */
+
+.sas-view[data-view-id='login'] {
+    max-width: 380px;
+    min-height: calc(100vh - 140px);
+    justify-content: center;
+}
+
+.sas-view[data-view-id='login'] h1 {
+    text-align: center;
+}
+
+.sas-view[data-view-id='login'] .sas-form {
+    padding: 24px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+}
+
+.sas-view[data-view-id='login'] .sas-form > .sas-btn {
+    justify-self: stretch;
+}
+
+/* ---- toast ---- */
+
+.sas-toast {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    z-index: 30;
+    max-width: min(480px, calc(100vw - 32px));
+    padding: 11px 18px;
+    border-radius: 12px;
+    background: var(--text);
+    color: var(--bg);
+    font-size: 14px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    transform: translateX(-50%);
+    animation: sas-toast-in 0.18s ease-out;
+}
+
+@keyframes sas-toast-in {
+    from {
+        opacity: 0;
+        transform: translate(-50%, 8px);
+    }
+}
+
+/* ---- phones and tablets: top bar and bottom tab bar ---- */
+
+@media (max-width: 899px) {
+    .sas-sidebar {
+        position: sticky;
+        inset: auto;
+        top: 0;
+        width: auto;
+        flex-direction: row;
+        align-items: center;
+        gap: 4px;
+        padding: 8px 8px 8px 14px;
+        padding-top: max(8px, env(safe-area-inset-top));
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+    }
+
+    .sas-brand {
+        flex: 1;
+        padding: 0;
+    }
+
+    .sas-brand-mark {
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+    }
+
+    .sas-tools {
+        padding: 0;
+        border-top: 0;
+    }
+
+    .sas-tools {
+        flex-wrap: nowrap;
+    }
+
+    .sas-conn {
+        flex: none;
+        padding: 0;
+    }
+
+    .sas-conn-text {
+        display: none;
+    }
+
+    .sas-conn-dot {
+        margin: 0 6px;
+    }
+
+    .sas-nav-group {
+        display: none;
+    }
+
+    /* Bottom tab bar: the Device views and "More". */
+    .sas-nav {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
+        background: var(--surface);
+        border-top: 1px solid var(--line);
+        overflow: visible;
+    }
+
+    .sas-nav-primary {
+        grid-template-columns: repeat(5, 1fr);
+    }
+
+    .sas-nav-primary a,
+    .sas-more-btn {
+        flex-direction: column;
+        gap: 3px;
+        padding: 6px 0;
+        font-size: 11px;
+    }
+
+    .sas-nav-primary a[aria-current='page'],
+    .sas-more-btn[aria-current='true'] {
+        background: none;
+        color: var(--accent);
+    }
+
+    .sas-more-item {
+        display: block;
+    }
+
+    /* "More" sheet: the System views. */
+    .sas-nav-secondary {
+        position: fixed;
+        left: 8px;
+        right: 8px;
+        bottom: calc(72px + env(safe-area-inset-bottom));
+        grid-template-columns: repeat(2, 1fr);
+        gap: 6px;
+        padding: 10px;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+        opacity: 0;
+        visibility: hidden;
+        transform: translateY(8px);
+        transition: 0.16s ease-out;
+    }
+
+    .sas-sidebar[data-open='true'] .sas-nav-secondary {
+        opacity: 1;
+        visibility: visible;
+        transform: none;
+    }
+
+    .sas-nav-secondary a {
+        padding: 12px;
+        background: var(--surface-2);
+        color: var(--text);
+    }
+
+    .sas-sidebar[data-open='true'] ~ .sas-scrim {
+        display: block;
+        position: fixed;
+        inset: 0;
+        z-index: 5;
+        background: rgba(0, 0, 0, 0.25);
+    }
+
+    .sas-main {
+        margin-left: 0;
+        padding: 20px 14px calc(96px + env(safe-area-inset-bottom));
+    }
+
+    h1 {
+        font-size: 22px;
+    }
+
+    .sas-toast {
+        bottom: calc(84px + env(safe-area-inset-bottom));
+    }
+
+    .sas-log-pane {
+        height: calc(100vh - 260px);
+    }
+
+    .sas-term-pane {
+        height: calc(100vh - 320px);
+    }
+}
+
+/* ---- phones: tables become stacked cards ---- */
+
+@media (max-width: 639px) {
+    .sas-table thead {
+        display: none;
+    }
+
+    .sas-table,
+    .sas-table tbody,
+    .sas-table tr,
+    .sas-table td {
+        display: block;
+        width: 100%;
+    }
+
+    .sas-table tr {
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--line);
+    }
+
+    .sas-table tbody tr:last-child {
+        border-bottom: 0;
+    }
+
+    .sas-table td {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 4px 0;
+        border: 0;
+        text-align: right;
+        overflow-wrap: anywhere;
+    }
+
+    .sas-table td[data-label]::before {
+        content: attr(data-label);
+        color: var(--text-dim);
+        text-align: left;
+    }
+
+    .sas-table tbody tr:hover td {
+        background: none;
+    }
+
+    .sas-table td.sas-row-actions {
+        justify-content: flex-start;
+        padding-top: 8px;
+    }
+
+    .sas-table td[data-label]:empty {
+        display: none;
+    }
+
+    .sas-row-actions[data-label]::before {
+        display: none;
+    }
+
+    .sas-row-form .sas-form {
+        max-width: none;
+    }
+
+    .sas-form > .sas-btn {
+        justify-self: stretch;
+    }
+}
+
+.sas-more-btn .sas-icon {
+    stroke-width: 3.2;
+}

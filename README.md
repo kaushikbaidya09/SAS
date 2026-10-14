@@ -7,10 +7,14 @@ in `docs/CODING_STANDARD.md`.
 
 ## Features
 
-- **Dashboard** for desktop and phone: Home (chip, memory, uptime, boot
-  status), Wi-Fi, BLE, Files, OTA, Terminal, Logs and Account views.
-- **Wi-Fi**: scan and connect from the dashboard. With no stored network the
-  device opens its own access point, `SAS_KB`.
+- **Dashboard** for desktop and phone, light or dark: Home (chip, memory,
+  uptime, boot status), Wi-Fi, BLE and Files, plus Update, Terminal, Logs and
+  Account. Desktop has a sidebar; phones have a bottom tab bar with the other
+  views under More.
+- **Wi-Fi**: scan and connect from the dashboard, or disconnect and forget a
+  network. With no stored network the device opens its own access point,
+  `SAS_KB`. The access point can be given a password and kept on after a
+  network is joined, so the device stays reachable at `http://192.168.4.1`.
 - **Found by name**: the device answers at `http://sas_kb.local` (mDNS), so its
   IP address does not need to be known. The name can be changed in the Wi-Fi
   view; give each board its own name if several share a network.
@@ -19,13 +23,15 @@ in `docs/CODING_STANDARD.md`.
 - **OTA**: firmware update by file upload or from a URL, with rollback if the new
   image fails to boot.
 - **Terminal**: `help`, `sysinfo`, `tasks`, `boot`, `wifi`, `reboot`.
-- **Login**: session tokens, per-client throttling of failed attempts.
+- **Login**: session tokens, per-client throttling of failed attempts; user
+  name and password can be changed in the Account view.
 - **REST API and WebSocket** under `/api/v1` and `/ws`.
 
 ## First use
 
 1. Build and flash (see [Build](#build)).
-2. Join the Wi-Fi network `SAS_KB` (open, no password) and browse to
+2. Join the Wi-Fi network `SAS_KB` (open until a password is set in the Wi-Fi
+   view) and browse to
    `http://192.168.4.1`.
 3. Log in with `admin` / `admin` and change the password in the Account view.
 4. In the Wi-Fi view press Scan, choose a network and connect. The access point
@@ -41,25 +47,25 @@ in `docs/CODING_STANDARD.md`.
    subsystem folder, e.g. `main/src/network/sas_mqtt.h` and `sas_mqtt.c`.
 2. Replace `template` / `TEMPLATE` with `sas_mqtt` / `SAS_MQTT` throughout.
 3. Fill in the `\brief` lines and delete the parts you do not need.
-4. Run `docs/tools/format.sh` and the `check` and `docs` targets below; all three must be clean.
+4. Run `tools/format.sh` and the `check` and `docs` targets below; all three must be clean.
 
 A new subsystem folder also needs adding to `SRC_DIRS` and `INCLUDE_DIRS` in
 `main/CMakeLists.txt`.
 
 ## Build
 
-Requires ESP-IDF v6.0 and GNU Make. `docs/tools/run.sh` finds ESP-IDF by itself;
+Requires ESP-IDF v6.0 and GNU Make. `tools/run.sh` finds ESP-IDF by itself;
 the plain `idf.py` commands need its environment loaded in the terminal first.
 
 ```sh
-docs/tools/run.sh --build            # build the firmware
-docs/tools/run.sh --flash            # flash firmware and dashboard to the board
-docs/tools/run.sh --monitor          # serial monitor (exit with Ctrl+])
-docs/tools/run.sh --all              # clean, build from scratch, flash, monitor
-docs/tools/run.sh --clean            # delete everything generated or downloaded
-docs/tools/run.sh --flash --port /dev/ttyUSB0   # another serial port (default /dev/ttyACM0)
+tools/run.sh --build            # build the firmware
+tools/run.sh --flash            # flash the firmware (it includes the dashboard)
+tools/run.sh --monitor          # serial monitor (exit with Ctrl+])
+tools/run.sh --all              # clean, build from scratch, flash, monitor
+tools/run.sh --clean            # delete everything generated or downloaded
+tools/run.sh --flash --port /dev/ttyUSB0   # another serial port (default /dev/ttyACM0)
 
-docs/tools/format.sh                 # format every .c/.h file (--check to only report)
+tools/format.sh                 # format C files and web/ (--check to only report)
 cmake --build build --target check   # cppcheck static analysis, fails on any finding
 cmake --build build --target docs    # Doxygen HTML → build/docs/html/index.html
 ```
@@ -82,25 +88,38 @@ All output goes to `build/`. `--clean` deletes it together with
 `managed_components/` (components fetched by ESP-IDF, downloaded again on the
 next build) and `.cache/` (the editor's code index). `sdkconfig` is kept.
 
-Every build first runs `docs/tools/format.sh`, so all `.c`/`.h` files are
-reformatted in place before they are compiled (skipped with a warning if
-`clang-format` is not installed). Third-party code in `managed_components/` is
-never touched.
+Every build first runs `tools/format.sh`: `.c`/`.h` files are formatted with
+clang-format (`tools/config/.clang-format`) and the dashboard in `web/` with
+Prettier (`tools/config/.prettierrc`). Prettier is found on the PATH, in
+`node_modules`, or in the VS Code Prettier extension; a missing tool is skipped
+with a warning. Third-party code in `managed_components/` is never touched.
 
 The build also compiles `templates/template.c` with the full warning set
 (`-Wall -Wextra -Werror -Wconversion -pedantic` and more), so the blank
 skeletons always meet the standard.
 
-### What flashing overwrites
+### Dashboard and updates
 
-`--flash` writes the bootloader, partition table, firmware and the LittleFS
-image built from `littlefs_data/`. The device keeps its settings in that same
-filesystem, so a flash resets the saved Wi-Fi network, the login password and
-the device name to their defaults. To update a device without losing them:
+The dashboard (`web/`) is gzip-compressed and built into the firmware image, so
+`build/SAS.bin` carries both:
 
-- **Firmware**: upload `build/SAS.bin` in the dashboard's OTA view, then reboot.
-- **Dashboard files**: upload the changed files from `littlefs_data/` to the same
-  paths in the Files view, e.g. `js/dashboard.js` to `/js/dashboard.js`.
+- **OTA**: upload `build/SAS.bin` in the dashboard's Update view; firmware and
+  dashboard update together, and a rollback restores both.
+- **Flashing** (`--flash`) writes the bootloader, partition table and firmware
+  only. The LittleFS partition is left alone, so the saved Wi-Fi network, the
+  login and the device name are kept.
+
+Browsers reload the dashboard only after a firmware change: its files carry
+the firmware's hash as an ETag. Files uploaded in the Files view are still
+served from LittleFS.
+
+### VS Code
+
+Open `SAS.code-workspace` (File → Open Workspace from File). It holds the shared
+settings with no machine-specific paths: format on save with the build's rules,
+the ESP-IDF setup (`~/.espressif/v6.0.2/esp-idf`), the debug configuration and the
+recommended extensions. The ESP-IDF extension writes `.vscode/settings.json` and
+`.clangd` for each machine; both are ignored by git.
 
 ## Conformance of the existing code
 

@@ -12,6 +12,7 @@
 #ifndef SAS_WIFI_MANAGER_H
 #define SAS_WIFI_MANAGER_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "../core/sas_status.h"
@@ -58,6 +59,10 @@ typedef struct
     time should be in fallback within radio range. */
 #define SAS_WIFI_FALLBACK_SSID "SAS_KB"
 
+/*! Size of an access point password buffer: WPA2 allows 8 to 63 characters,
+    plus the NUL. */
+#define SAS_WIFI_AP_PASSWORD_MAX_LEN (64U)
+
 /*! \brief Connection status snapshot returned by sas_wifi_get_status(). */
 typedef struct
 {
@@ -67,6 +72,10 @@ typedef struct
     char ip[16];            ///< Station IPv4 address, dotted; empty when not connected.
     char hostname[SAS_WIFI_HOSTNAME_MAX_LEN]; ///< mDNS host name; the device answers at
                                               ///< "<hostname>.local".
+    char ap_ssid[33];                         ///< SSID of the device's own access point.
+    bool ap_active;                           ///< The access point is up right now.
+    bool ap_always_on; ///< The access point stays up after a network is joined.
+    bool ap_secured;   ///< The access point asks for a password (WPA2); false if open.
 } sas_wifi_status_t;
 
 /*! \brief Station credentials supplied to sas_wifi_connect(). */
@@ -103,5 +112,11 @@ sas_wifi_state_t sas_wifi_get_state(void);
 sas_status_t sas_wifi_get_status(sas_wifi_status_t *out);
 
 sas_status_t sas_wifi_set_hostname(const char *hostname);
+
+sas_status_t sas_wifi_forget(void);
+
+sas_status_t sas_wifi_set_ap_config(bool always_on, const char *password);
+
+sas_status_t sas_wifi_apply_ap_config(void);
 
 #endif /* SAS_WIFI_MANAGER_H */

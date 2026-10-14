@@ -10,13 +10,13 @@ set -euo pipefail
 
 usage() {
     cat <<'EOF'
-Usage: docs/tools/run.sh [steps] [--port PORT]
+Usage: tools/run.sh [steps] [--port PORT]
 
 Steps (combine freely; they always run in this order):
   --clean      Delete everything generated or downloaded: the build output,
                the fetched components and the editor's index cache
   --build      Build the firmware (GNU Make, not Ninja)
-  --flash      Flash firmware and dashboard to the board
+  --flash      Flash the firmware (it includes the dashboard)
   --monitor    Open the serial monitor (exit with Ctrl+])
   --all        All four: clean, build, flash, monitor
 
@@ -24,8 +24,9 @@ Options:
   --port PORT  Serial port (default: /dev/ttyACM0)
   --help       Show this help
 
-Note: flashing rewrites the filesystem, so saved Wi-Fi credentials, the login
-password and the device name go back to their defaults.
+Note: the dashboard is part of the firmware image. Flashing does not touch
+the filesystem, so saved Wi-Fi networks, the login and the device name are
+kept.
 EOF
 }
 
@@ -95,8 +96,8 @@ fi
 #------------------------------------------------------------------------------
 # Run the steps
 #------------------------------------------------------------------------------
-# Work from the project root, two levels up from docs/tools/.
-cd "$(dirname "${BASH_SOURCE[0]}")/../.."
+# Work from the project root, one level up from tools/.
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 # Everything a build generates or downloads, so the next build starts from
 # nothing but the tracked sources:

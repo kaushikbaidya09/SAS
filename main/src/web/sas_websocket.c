@@ -861,6 +861,10 @@ static void on_wifi_state_changed(const sas_event_t *event, void *user_ctx)
     cJSON_AddNumberToObject(data, "rssi", wifi_status.rssi);
     cJSON_AddStringToObject(data, "ip", wifi_status.ip);
     cJSON_AddStringToObject(data, "hostname", wifi_status.hostname);
+    cJSON_AddStringToObject(data, "ap_ssid", wifi_status.ap_ssid);
+    cJSON_AddBoolToObject(data, "ap_active", wifi_status.ap_active);
+    cJSON_AddBoolToObject(data, "ap_always_on", wifi_status.ap_always_on);
+    cJSON_AddBoolToObject(data, "ap_secured", wifi_status.ap_secured);
     (void)sas_ws_broadcast(SAS_WS_MSG_WIFI_STATE, data);
     cJSON_Delete(data);
 }

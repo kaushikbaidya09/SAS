@@ -5,10 +5,15 @@
 
 # Directory
 .directory
-.vscode
-# Project documents stay local; the coding standard and build tooling are tracked.
+
+# Editor files. Shared VS Code settings are in SAS.code-workspace; .vscode/
+# and .clangd are machine-specific and written by the ESP-IDF extension.
+/.vscode
+/.clangd
+/.cache
+
+# Project documents stay local; the coding standard is tracked.
 docs/*
-!docs/tools/
 !docs/CODING_STANDARD.md
 
 # Temporary files

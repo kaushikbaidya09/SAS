@@ -50,6 +50,7 @@ static const char *TAG = "sas_rest";
 #define SAS_API_DEFAULT_MAX_UPLOAD_LEN (4 * 1024 * 1024) ///< Default api.max_upload_len, bytes.
 #define SAS_API_URL_MAX_LEN            (256U) ///< Longest POST /ota/url URL, including the NUL.
 #define SAS_API_REBOOT_DELAY_US        (750000ULL) ///< Lets the reboot response reach the client first.
+#define SAS_API_FORGET_DELAY_MS        (750U)      ///< Lets the /wifi/forget response go out first.
 #define SAS_API_WORKER_STACK_SIZE      (8192U) ///< Stack of the OTA-from-URL / Wi-Fi-connect tasks.
 #define SAS_API_RECV_RETRIES           (3)     ///< Socket-timeout retries while receiving a body.
 
@@ -71,6 +72,7 @@ static esp_timer_handle_t s_reboot_timer = NULL;
 static esp_err_t handle_auth_login(httpd_req_t *req);
 static esp_err_t handle_auth_logout(httpd_req_t *req);
 static esp_err_t handle_auth_change_password(httpd_req_t *req);
+static esp_err_t handle_auth_change_username(httpd_req_t *req);
 static esp_err_t handle_auth_status(httpd_req_t *req);
 static esp_err_t handle_system_info(httpd_req_t *req);
 static esp_err_t handle_system_runtime(httpd_req_t *req);
@@ -91,6 +93,8 @@ static esp_err_t handle_wifi_status(httpd_req_t *req);
 static esp_err_t handle_wifi_scan(httpd_req_t *req);
 static esp_err_t handle_wifi_connect(httpd_req_t *req);
 static esp_err_t handle_wifi_hostname(httpd_req_t *req);
+static esp_err_t handle_wifi_forget(httpd_req_t *req);
+static esp_err_t handle_wifi_ap(httpd_req_t *req);
 static esp_err_t handle_ble_scan_start(httpd_req_t *req);
 static esp_err_t handle_ble_scan_stop(httpd_req_t *req);
 static esp_err_t handle_ble_devices(httpd_req_t *req);
@@ -117,6 +121,8 @@ static void schedule_reboot(void);
 static void reboot_timer_callback(void *arg);
 static void ota_url_task(void *arg);
 static void wifi_connect_task(void *arg);
+static void wifi_forget_task(void *arg);
+static void wifi_ap_task(void *arg);
 static const char *http_reason(int http_status);
 static const char *log_level_name(sas_log_level_t level);
 static const char *wifi_state_name(sas_wifi_state_t state);
@@ -167,6 +173,7 @@ sas_status_t sas_rest_api_start(void)
         {SAS_API_BASE_PATH "/auth/login", HTTP_POST, handle_auth_login, false},
         {SAS_API_BASE_PATH "/auth/logout", HTTP_POST, handle_auth_logout, true},
         {SAS_API_BASE_PATH "/auth/change-password", HTTP_POST, handle_auth_change_password, true},
+        {SAS_API_BASE_PATH "/auth/change-username", HTTP_POST, handle_auth_change_username, true},
         {SAS_API_BASE_PATH "/auth/status", HTTP_GET, handle_auth_status, false},
         // System Information
         {SAS_API_BASE_PATH "/system/info", HTTP_GET, handle_system_info, false},
@@ -192,6 +199,8 @@ sas_status_t sas_rest_api_start(void)
         {SAS_API_BASE_PATH "/wifi/scan", HTTP_GET, handle_wifi_scan, true},
         {SAS_API_BASE_PATH "/wifi/connect", HTTP_POST, handle_wifi_connect, true},
         {SAS_API_BASE_PATH "/wifi/hostname", HTTP_POST, handle_wifi_hostname, true},
+        {SAS_API_BASE_PATH "/wifi/forget", HTTP_POST, handle_wifi_forget, true},
+        {SAS_API_BASE_PATH "/wifi/ap", HTTP_POST, handle_wifi_ap, true},
         // BLE Scanner
         {SAS_API_BASE_PATH "/ble/scan/start", HTTP_POST, handle_ble_scan_start, true},
         {SAS_API_BASE_PATH "/ble/scan/stop", HTTP_POST, handle_ble_scan_stop, true},
@@ -416,7 +425,7 @@ static esp_err_t handle_auth_change_password(httpd_req_t *req)
         }
         else if (status == SAS_AUTH_ERR_INVALID_CREDENTIAL)
         {
-            send_error(req, 401, "unauthorized", "current_password is wrong");
+            send_error(req, 403, "forbidden", "The current password is wrong");
         }
         else if (status == SAS_ERR_INVALID_ARG)
         {
@@ -430,6 +439,49 @@ static esp_err_t handle_auth_change_password(httpd_req_t *req)
 
     cJSON_Delete(body);
     (void)memset(s_body, 0, sizeof(s_body));
+    return ESP_OK;
+}
+
+/*!
+    \brief   POST /api/v1/auth/change-username: { current_password,
+             new_username }.
+*/
+static esp_err_t handle_auth_change_username(httpd_req_t *req)
+{
+    cJSON *body = read_json_body(req);
+    if (body == NULL)
+    {
+        return ESP_OK;
+    }
+
+    const char *current = require_string(req, body, "current_password", SAS_AUTH_MAX_PASSWORD_LEN);
+    const char *username =
+        (current != NULL) ? require_string(req, body, "new_username", 32U) : NULL;
+    if (username != NULL)
+    {
+        sas_status_t status = sas_auth_change_username(current, username);
+        if (status == SAS_STATUS_OK)
+        {
+            send_status(req, NULL, "ok");
+        }
+        else if (status == SAS_AUTH_ERR_INVALID_CREDENTIAL)
+        {
+            send_error(req, 403, "forbidden", "The current password is wrong");
+        }
+        else if (status == SAS_ERR_INVALID_ARG)
+        {
+            send_error(req, 400, "invalid_request",
+                       "new_username must be 1 to 32 characters from letters, digits, '.', '_' "
+                       "and '-'");
+        }
+        else
+        {
+            send_error(req, 500, "internal_error", "Could not store the new user name");
+        }
+    }
+
+    cJSON_Delete(body);
+    (void)memset(s_body, 0, sizeof(s_body)); // held the plaintext password
     return ESP_OK;
 }
 
@@ -450,6 +502,13 @@ static esp_err_t handle_auth_status(httpd_req_t *req)
     cJSON *resp = cJSON_CreateObject();
     cJSON_AddBoolToObject(resp, "enabled", enabled);
     cJSON_AddBoolToObject(resp, "authenticated", authenticated);
+    if (enabled && authenticated)
+    {
+        // Only a logged-in caller is told the user name.
+        char username[33];
+        (void)sas_auth_get_username(username, sizeof(username));
+        cJSON_AddStringToObject(resp, "username", username);
+    }
     send_object(req, resp);
     return ESP_OK;
 }
@@ -964,6 +1023,10 @@ static esp_err_t handle_wifi_status(httpd_req_t *req)
     cJSON_AddNumberToObject(resp, "rssi", wifi.rssi);
     cJSON_AddStringToObject(resp, "ip", wifi.ip);
     cJSON_AddStringToObject(resp, "hostname", wifi.hostname);
+    cJSON_AddStringToObject(resp, "ap_ssid", wifi.ap_ssid);
+    cJSON_AddBoolToObject(resp, "ap_active", wifi.ap_active);
+    cJSON_AddBoolToObject(resp, "ap_always_on", wifi.ap_always_on);
+    cJSON_AddBoolToObject(resp, "ap_secured", wifi.ap_secured);
     send_object(req, resp);
     return ESP_OK;
 }
@@ -1050,6 +1113,90 @@ static esp_err_t handle_wifi_connect(httpd_req_t *req)
 
     cJSON_Delete(body);
     (void)memset(s_body, 0, sizeof(s_body)); // held the Wi-Fi passphrase
+    return ESP_OK;
+}
+
+/*!
+    \brief   POST /api/v1/wifi/forget: disconnect from the current network and
+             erase its stored credentials. Answers at once; the device then
+             drops the network and starts its fallback access point, so the
+             caller loses its connection if it came in over that network.
+*/
+static esp_err_t handle_wifi_forget(httpd_req_t *req)
+{
+    if (s_wifi_connect_busy)
+    {
+        send_error(req, 409, "conflict", "A connection attempt is in progress");
+        return ESP_OK;
+    }
+
+    s_wifi_connect_busy = true;
+    if (xTaskCreate(wifi_forget_task, "sas_wifi_forget", SAS_API_WORKER_STACK_SIZE, NULL,
+                    tskIDLE_PRIORITY + 3U, NULL) != pdPASS)
+    {
+        s_wifi_connect_busy = false;
+        send_error(req, 500, "internal_error", "Could not start the disconnect");
+        return ESP_OK;
+    }
+
+    send_status(req, NULL, "ok");
+    return ESP_OK;
+}
+
+/*!
+    \brief   POST /api/v1/wifi/ap: { always_on, password? }. Stores the access
+             point settings and answers; the change goes on air shortly after,
+             so a caller connected through the access point still gets the
+             response. password is optional: omitted keeps the stored one, ""
+             removes it.
+*/
+static esp_err_t handle_wifi_ap(httpd_req_t *req)
+{
+    cJSON *body = read_json_body(req);
+    if (body == NULL)
+    {
+        return ESP_OK;
+    }
+
+    const cJSON *always_on = cJSON_GetObjectItemCaseSensitive(body, "always_on");
+    const cJSON *password  = cJSON_GetObjectItemCaseSensitive(body, "password");
+    if (!cJSON_IsBool(always_on) || ((password != NULL) && !cJSON_IsString(password)))
+    {
+        send_error(req, 400, "invalid_request",
+                   "Expected { \"always_on\": <bool>, \"password\": <optional string> }");
+    }
+    else if (s_wifi_connect_busy)
+    {
+        send_error(req, 409, "conflict", "Another Wi-Fi change is in progress");
+    }
+    else
+    {
+        sas_status_t status = sas_wifi_set_ap_config(
+            cJSON_IsTrue(always_on), (password != NULL) ? password->valuestring : NULL);
+        if (status == SAS_ERR_INVALID_ARG)
+        {
+            send_error(req, 400, "invalid_request",
+                       "The password must be 8 to 63 characters, and always_on needs a password");
+        }
+        else if (status != SAS_STATUS_OK)
+        {
+            send_error(req, 500, "internal_error", "Could not store the access point settings");
+        }
+        else
+        {
+            s_wifi_connect_busy = true;
+            if (xTaskCreate(wifi_ap_task, "sas_wifi_ap", SAS_API_WORKER_STACK_SIZE, NULL,
+                            tskIDLE_PRIORITY + 3U, NULL) != pdPASS)
+            {
+                // Stored but not yet on air; it takes effect at the next boot.
+                s_wifi_connect_busy = false;
+            }
+            send_status(req, NULL, "ok");
+        }
+    }
+
+    cJSON_Delete(body);
+    (void)memset(s_body, 0, sizeof(s_body)); // held the access point password
     return ESP_OK;
 }
 
@@ -1577,10 +1724,8 @@ static void url_decode(char *text)
 static bool config_key_is_secret(const char *key)
 {
     static const char *const secret_keys[] = {
-        "auth.password_hash",
-        "auth.password_salt",
-        "auth.sw_key",
-        "wifi.sta.password",
+        "auth.password_hash", "auth.password_salt", "auth.sw_key",
+        "wifi.sta.password",  "wifi.ap.password",
     };
     for (size_t i = 0U; i < (sizeof(secret_keys) / sizeof(secret_keys[0])); i++)
     {
@@ -1666,6 +1811,36 @@ static void ota_url_task(void *arg)
     }
 
     s_ota_url_busy = false;
+    vTaskDelete(NULL);
+}
+
+/*!
+    \brief   Worker for POST /wifi/forget: waits long enough for the response
+             to reach the client, then takes the network down.
+*/
+static void wifi_forget_task(void *arg)
+{
+    (void)arg;
+
+    vTaskDelay(pdMS_TO_TICKS(SAS_API_FORGET_DELAY_MS));
+    (void)sas_wifi_forget();
+
+    s_wifi_connect_busy = false;
+    vTaskDelete(NULL);
+}
+
+/*!
+    \brief   Worker for POST /wifi/ap: waits for the response to reach the
+             client, then applies the stored access point settings.
+*/
+static void wifi_ap_task(void *arg)
+{
+    (void)arg;
+
+    vTaskDelay(pdMS_TO_TICKS(SAS_API_FORGET_DELAY_MS));
+    (void)sas_wifi_apply_ap_config();
+
+    s_wifi_connect_busy = false;
     vTaskDelete(NULL);
 }
 

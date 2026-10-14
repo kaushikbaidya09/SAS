@@ -21,6 +21,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "esp_app_desc.h"
 #include "esp_https_server.h"
 
 #include "../auth/sas_auth.h"
@@ -42,6 +43,35 @@ static const char *TAG = "sas_http";
 #define SAS_HTTP_TASK_STACK_SIZE (8192U)
 /*! \brief URI prefix never served statically: Configuration Manager's backing store. */
 #define SAS_HTTP_PRIVATE_PATH_PREFIX "/config"
+
+// The dashboard, gzip-compressed and linked into the firmware by
+// main/CMakeLists.txt.
+extern const uint8_t _binary_index_html_gz_start[];
+extern const uint8_t _binary_index_html_gz_end[];
+extern const uint8_t _binary_style_css_gz_start[];
+extern const uint8_t _binary_style_css_gz_end[];
+extern const uint8_t _binary_dashboard_js_gz_start[];
+extern const uint8_t _binary_dashboard_js_gz_end[];
+extern const uint8_t _binary_terminal_js_gz_start[];
+extern const uint8_t _binary_terminal_js_gz_end[];
+
+/*! \brief One dashboard file built into the firmware. */
+typedef struct
+{
+    const char *uri;      ///< Request path that returns it.
+    const char *type;     ///< Content type.
+    const uint8_t *start; ///< Compressed bytes.
+    const uint8_t *end;   ///< One past the last compressed byte.
+} sas_http_web_file_t;
+
+static const sas_http_web_file_t s_web_files[] = {
+    {"/index.html", "text/html", _binary_index_html_gz_start, _binary_index_html_gz_end},
+    {"/css/style.css", "text/css", _binary_style_css_gz_start, _binary_style_css_gz_end},
+    {"/js/dashboard.js", "application/javascript", _binary_dashboard_js_gz_start,
+     _binary_dashboard_js_gz_end},
+    {"/js/terminal.js", "application/javascript", _binary_terminal_js_gz_start,
+     _binary_terminal_js_gz_end},
+};
 
 // TLS certificate and key, embedded from main/certs/ (EMBED_TXTFILES in
 // main/CMakeLists.txt).
@@ -433,7 +463,8 @@ static esp_err_t dispatch_route(httpd_req_t *req)
 
 /*!
     \brief   Fallback URI handler for requests that do not match a registered
-             route: serves `/www/<uri>` via the File Manager.
+             route: serves the dashboard from the firmware image, and any
+             other path as `/www/<uri>` via the File Manager.
 */
 static esp_err_t default_static_handler(httpd_req_t *req)
 {
@@ -446,6 +477,37 @@ static esp_err_t default_static_handler(httpd_req_t *req)
     const char *uri_path = (strcmp(req->uri, "/") == 0) ? "/index.html" : req->uri;
     // Strip a query string, if any, before mapping to a File Manager path.
     size_t uri_len = strcspn(uri_path, "?");
+
+    // Dashboard files are sent gzip-compressed from the firmware image. They
+    // change only with the firmware, so its hash is the ETag: with no-cache
+    // the browser checks it on every load and gets a short 304 until the
+    // firmware is updated.
+    for (size_t i = 0U; i < (sizeof(s_web_files) / sizeof(s_web_files[0])); i++)
+    {
+        const sas_http_web_file_t *file = &s_web_files[i];
+        if ((strlen(file->uri) != uri_len) || (strncmp(file->uri, uri_path, uri_len) != 0))
+        {
+            continue;
+        }
+
+        char hash[9];
+        char etag[12];
+        char match[16] = "";
+        (void)esp_app_get_elf_sha256(hash, sizeof(hash));
+        (void)snprintf(etag, sizeof(etag), "\"%s\"", hash);
+        (void)httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
+        (void)httpd_resp_set_hdr(req, "ETag", etag);
+        if ((httpd_req_get_hdr_value_str(req, "If-None-Match", match, sizeof(match)) == ESP_OK) &&
+            (strcmp(match, etag) == 0))
+        {
+            (void)httpd_resp_set_status(req, "304 Not Modified");
+            return httpd_resp_send(req, NULL, 0);
+        }
+        (void)httpd_resp_set_type(req, file->type);
+        (void)httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
+        return httpd_resp_send(req, (const char *)file->start, (ssize_t)(file->end - file->start));
+    }
+
     // 4U is the length of the "/www" prefix.
     if ((uri_len + 4U) >= sizeof(path))
     {
@@ -474,24 +536,14 @@ static esp_err_t default_static_handler(httpd_req_t *req)
     sas_status_t status = sas_fs_read(path, offset, chunk, sizeof(chunk), &total_read);
     if (status != SAS_STATUS_OK)
     {
-        if (strcmp(path, "/www/index.html") != 0)
-        {
-            httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, NULL); // SAS-HTTP-FR-004
-            return ESP_OK;
-        }
-        // The dashboard is missing or the filesystem failed to mount: serve a
-        // minimal built-in page instead.
-        static const char fallback_body[] =
-            "<!doctype html><title>SAS</title>SAS device: filesystem unavailable.";
-        httpd_resp_set_type(req, "text/html");
-        httpd_resp_send(req, fallback_body, sizeof(fallback_body) - 1U);
+        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, NULL); // SAS-HTTP-FR-004
         return ESP_OK;
     }
 
     // Send the file in chunks; a short read marks the end of the file.
     httpd_resp_set_type(req, content_type_for_path(path));
-    // The dashboard's files change with every filesystem flash; without this a browser keeps
-    // running its cached copy of the old ones.
+    // Files can be replaced from the Files view; without this a browser keeps
+    // its cached copy of the old ones.
     (void)httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
     while (total_read > 0U)
     {

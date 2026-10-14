@@ -1,5 +1,5 @@
 # Formatting rules for docs/CODING_STANDARD.md section 8.
-# Apply with: docs/tools/format.sh
+# Apply with: tools/format.sh
 BasedOnStyle: LLVM
 
 IndentWidth: 4

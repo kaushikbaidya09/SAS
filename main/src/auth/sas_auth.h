@@ -22,6 +22,7 @@
 #define SAS_AUTH_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include "../core/sas_status.h"
@@ -82,5 +83,9 @@ sas_status_t sas_auth_validate_token(const char *token);
 sas_status_t sas_auth_logout(const char *token);
 
 sas_status_t sas_auth_change_credential(const char *current_password, const char *new_password);
+
+sas_status_t sas_auth_change_username(const char *current_password, const char *new_username);
+
+sas_status_t sas_auth_get_username(char *out, size_t out_len);
 
 #endif /* SAS_AUTH_H */

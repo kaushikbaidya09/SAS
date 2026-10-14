@@ -48,3 +48,20 @@ idf_component_register(
         joltwallet__littlefs
         espressif__mdns
 )
+
+# The dashboard (web/ at the project root) is gzip-compressed and built into
+# the firmware, so one OTA image updates firmware and dashboard together and
+# flashing never touches the filesystem. Each file is linked as
+# _binary_<name>_gz_start / _end (see sas_http_server.c).
+idf_build_get_property(python PYTHON)
+foreach(file index.html css/style.css js/dashboard.js js/terminal.js)
+    get_filename_component(name ${file} NAME)
+    set(src ${PROJECT_DIR}/web/${file})
+    set(gz ${CMAKE_CURRENT_BINARY_DIR}/${name}.gz)
+    add_custom_command(
+        OUTPUT ${gz}
+        COMMAND ${python} ${PROJECT_DIR}/tools/gzip_web.py ${src} ${gz}
+        DEPENDS ${src} ${PROJECT_DIR}/tools/gzip_web.py
+        VERBATIM)
+    target_add_binary_data(${COMPONENT_LIB} ${gz} BINARY)
+endforeach()

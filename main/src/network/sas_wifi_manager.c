@@ -59,6 +59,9 @@ static uint32_t s_retry_count   = 0U;
 static sas_wifi_credentials_t s_creds;
 static char s_hostname[SAS_WIFI_HOSTNAME_MAX_LEN]; ///< mDNS host name; set by load_config().
 
+static bool s_ap_always_on = false; ///< wifi.ap.always_on: keep the AP up beside a joined network.
+static char s_ap_password[SAS_WIFI_AP_PASSWORD_MAX_LEN]; ///< wifi.ap.password; empty: open AP.
+
 static uint32_t s_max_retry_count    = 5U;
 static uint32_t s_initial_backoff_ms = 1000U;
 static uint32_t s_connect_timeout_ms = 10000U;
@@ -92,6 +95,8 @@ static void build_fallback_ssid(char *out, size_t out_len);
 static void build_default_hostname(char *out, size_t out_len);
 static bool normalize_hostname(const char *in, char *out, size_t out_len);
 static void start_mdns(void);
+static void build_ap_config(wifi_config_t *out);
+static bool ap_runs_beside_station(void);
 static void switch_to_ap_fallback(void);
 static void begin_sta_connect(void);
 static void issue_connect_or_handle_failure(void);
@@ -456,7 +461,16 @@ sas_status_t sas_wifi_get_status(sas_wifi_status_t *out)
         out->state = s_state;
         (void)strncpy(out->ssid, s_creds.ssid, sizeof(out->ssid) - 1U);
         (void)strncpy(out->hostname, s_hostname, sizeof(out->hostname) - 1U);
+        out->ap_always_on = s_ap_always_on;
+        out->ap_secured   = (s_ap_password[0] != '\0');
         xSemaphoreGive(s_state_lock);
+    }
+    build_fallback_ssid(out->ap_ssid, sizeof(out->ap_ssid));
+
+    wifi_mode_t mode = WIFI_MODE_NULL;
+    if ((out->state != SAS_WIFI_STATE_IDLE) && (esp_wifi_get_mode(&mode) == ESP_OK))
+    {
+        out->ap_active = (mode == WIFI_MODE_AP) || (mode == WIFI_MODE_APSTA);
     }
 
     if (out->state == SAS_WIFI_STATE_CONNECTED)
@@ -473,6 +487,171 @@ sas_status_t sas_wifi_get_status(sas_wifi_status_t *out)
             (void)snprintf(out->ip, sizeof(out->ip), IPSTR, IP2STR(&ip_info.ip));
         }
     }
+    return SAS_STATUS_OK;
+}
+
+/*!
+    \brief   Disconnect from the current network and forget it: the stored
+             SSID and passphrase are erased and the device goes back to its
+             fallback access point, as on a first boot.
+    \note    Blocks while the driver restarts, and drops every connection made
+             over the forgotten network, including the caller's if it arrived
+             that way.
+    \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_STATE if not started.
+*/
+sas_status_t sas_wifi_forget(void)
+{
+    if (!s_started)
+    {
+        return SAS_ERR_INVALID_STATE;
+    }
+
+    (void)esp_timer_stop(s_retry_timer); // no pending reconnect to the forgotten network
+
+    sas_config_value_t val;
+    val.type             = SAS_CFG_TYPE_STRING;
+    val.value.str_val[0] = '\0';
+    if ((sas_config_set("wifi.sta.ssid", &val) != SAS_STATUS_OK) ||
+        (sas_config_set("wifi.sta.password", &val) != SAS_STATUS_OK))
+    {
+        sas_log_warn("stored Wi-Fi credentials could not be erased from the configuration");
+    }
+
+    if (xSemaphoreTake(s_state_lock, SAS_WIFI_LOCK_WAIT_TICKS) == pdTRUE)
+    {
+        (void)memset(&s_creds, 0, sizeof(s_creds));
+        s_retry_count = 0U;
+        xSemaphoreGive(s_state_lock);
+    }
+
+    // State first: the disconnect event raised by stopping the driver is then
+    // ignored instead of starting a reconnect.
+    set_state_and_publish(SAS_WIFI_STATE_AP_FALLBACK);
+    switch_to_ap_fallback();
+
+    sas_log_info("Wi-Fi network forgotten; fallback access point started");
+    return SAS_STATUS_OK;
+}
+
+/*!
+    \brief   Store the access point settings. Nothing changes on air until
+             sas_wifi_apply_ap_config() is called, so a caller connected
+             through the access point can still be answered first.
+    \param[in] always_on  true to keep the access point up after a network is
+                          joined; false to run it only as the fallback when
+                          there is no network.
+    \param[in] password   NULL to keep the stored password; "" to remove it
+                          (open access point); otherwise the new WPA2 password
+                          of 8 to 63 characters.
+    \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_ARG if the password's
+             length is out of range, or always_on is requested without a
+             password (an open access point is not left running beside a
+             joined network); SAS_ERR_INVALID_STATE if not initialized;
+             SAS_ERR_TIMEOUT if the lock is busy.
+*/
+sas_status_t sas_wifi_set_ap_config(bool always_on, const char *password)
+{
+    if (!s_initialized)
+    {
+        return SAS_ERR_INVALID_STATE;
+    }
+
+    if (password != NULL)
+    {
+        size_t len = strlen(password);
+        if ((len != 0U) && ((len < 8U) || (len >= SAS_WIFI_AP_PASSWORD_MAX_LEN)))
+        {
+            return SAS_ERR_INVALID_ARG;
+        }
+    }
+
+    if (xSemaphoreTake(s_state_lock, SAS_WIFI_LOCK_WAIT_TICKS) != pdTRUE)
+    {
+        return SAS_ERR_TIMEOUT;
+    }
+
+    sas_status_t status      = SAS_STATUS_OK;
+    const char *new_password = (password != NULL) ? password : s_ap_password;
+    if (always_on && (new_password[0] == '\0'))
+    {
+        status = SAS_ERR_INVALID_ARG;
+    }
+    else
+    {
+        if (password != NULL)
+        {
+            (void)strcpy(s_ap_password, password);
+        }
+        s_ap_always_on = always_on;
+    }
+
+    sas_config_value_t password_val;
+    password_val.type = SAS_CFG_TYPE_STRING;
+    (void)strcpy(password_val.value.str_val, s_ap_password);
+    xSemaphoreGive(s_state_lock);
+
+    if (status == SAS_STATUS_OK)
+    {
+        sas_config_value_t always_on_val;
+        always_on_val.type           = SAS_CFG_TYPE_BOOL;
+        always_on_val.value.bool_val = always_on;
+        if ((sas_config_set("wifi.ap.password", &password_val) != SAS_STATUS_OK) ||
+            (sas_config_set("wifi.ap.always_on", &always_on_val) != SAS_STATUS_OK))
+        {
+            sas_log_warn("access point settings applied but could not be persisted");
+        }
+    }
+
+    (void)memset(&password_val, 0, sizeof(password_val)); // held the password
+    return status;
+}
+
+/*!
+    \brief   Bring the running access point in line with the stored settings:
+             start or stop it beside a joined network, and apply a changed
+             password.
+    \note    Clients on the access point are disconnected when its password
+             changes or it is switched off.
+    \return  SAS_STATUS_OK on success; SAS_ERR_INVALID_STATE if not started.
+*/
+sas_status_t sas_wifi_apply_ap_config(void)
+{
+    if (!s_started)
+    {
+        return SAS_ERR_INVALID_STATE;
+    }
+
+    wifi_config_t ap_config;
+    build_ap_config(&ap_config);
+
+    sas_wifi_state_t state = sas_wifi_get_state();
+    if (state == SAS_WIFI_STATE_AP_FALLBACK)
+    {
+        // The fallback access point is always up; only its security can change.
+        (void)esp_wifi_set_config(WIFI_IF_AP, &ap_config);
+    }
+    else if (state != SAS_WIFI_STATE_IDLE)
+    {
+        // On, or joining, a network: the mode can change without restarting
+        // the driver, so the station link is kept.
+        if (ap_runs_beside_station())
+        {
+            (void)esp_wifi_set_mode(WIFI_MODE_APSTA);
+            (void)esp_wifi_set_config(WIFI_IF_AP, &ap_config);
+        }
+        else
+        {
+            (void)esp_wifi_set_mode(WIFI_MODE_STA);
+        }
+    }
+    else
+    {
+        // idle: the settings take effect at the next start
+    }
+
+    (void)memset(&ap_config, 0, sizeof(ap_config)); // held the password
+    sas_log_info("access point: %s, %s", ap_runs_beside_station() ? "always on" : "fallback only",
+                 (s_ap_password[0] != '\0') ? "WPA2" : "open");
     return SAS_STATUS_OK;
 }
 
@@ -544,6 +723,21 @@ static void load_config(void)
     (void)strncpy(s_creds.password, val.value.str_val, sizeof(s_creds.password) - 1U);
     s_creds.password[sizeof(s_creds.password) - 1U] = '\0';
 
+    // Access point: the password protects it, always_on keeps it up beside a
+    // joined network. A stored password that is not a valid WPA2 one is ignored.
+    (void)sas_config_get("wifi.ap.password", &val, &def);
+    size_t ap_password_len = strlen(val.value.str_val);
+    if ((ap_password_len >= 8U) && (ap_password_len < sizeof(s_ap_password)))
+    {
+        (void)strcpy(s_ap_password, val.value.str_val);
+    }
+
+    sas_config_value_t bool_def;
+    bool_def.type           = SAS_CFG_TYPE_BOOL;
+    bool_def.value.bool_val = false;
+    (void)sas_config_get("wifi.ap.always_on", &val, &bool_def);
+    s_ap_always_on = (val.type == SAS_CFG_TYPE_BOOL) && val.value.bool_val;
+
     // wifi.hostname: a stored name wins; unset or unusable falls back to the default.
     (void)sas_config_get("wifi.hostname", &val, &def);
     if (!normalize_hostname(val.value.str_val, s_hostname, sizeof(s_hostname)))
@@ -601,7 +795,18 @@ static void begin_sta_connect(void)
                   sizeof(wifi_config.sta.password) - 1U);
 
     (void)esp_wifi_stop(); // ensures a clean switch out of fallback mode
-    (void)esp_wifi_set_mode(WIFI_MODE_STA);
+    if (ap_runs_beside_station())
+    {
+        // Always-on access point: it follows the joined network's channel.
+        wifi_config_t ap_config;
+        build_ap_config(&ap_config);
+        (void)esp_wifi_set_mode(WIFI_MODE_APSTA);
+        (void)esp_wifi_set_config(WIFI_IF_AP, &ap_config);
+    }
+    else
+    {
+        (void)esp_wifi_set_mode(WIFI_MODE_STA);
+    }
     (void)esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
     (void)esp_wifi_start();
 }
@@ -775,22 +980,53 @@ static void start_mdns(void)
 }
 
 /*!
+    \brief   Fill out with the access point's configuration: the fixed SSID, and
+             WPA2 with wifi.ap.password when one is stored, otherwise open.
+*/
+static void build_ap_config(wifi_config_t *out)
+{
+    char ap_ssid[33]; // same size as sas_wifi_credentials_t.ssid
+    build_fallback_ssid(ap_ssid, sizeof(ap_ssid));
+
+    (void)memset(out, 0, sizeof(*out));
+    (void)strncpy((char *)out->ap.ssid, ap_ssid, sizeof(out->ap.ssid) - 1U);
+    out->ap.ssid_len       = (uint8_t)strlen(ap_ssid);
+    out->ap.channel        = SAS_WIFI_AP_FALLBACK_CHANNEL;
+    out->ap.max_connection = SAS_WIFI_AP_FALLBACK_MAX_CONN;
+
+    if (xSemaphoreTake(s_state_lock, SAS_WIFI_LOCK_WAIT_TICKS) == pdTRUE)
+    {
+        (void)strncpy((char *)out->ap.password, s_ap_password, sizeof(out->ap.password) - 1U);
+        xSemaphoreGive(s_state_lock);
+    }
+    out->ap.authmode = (out->ap.password[0] != '\0') ? WIFI_AUTH_WPA2_PSK : WIFI_AUTH_OPEN;
+}
+
+/*!
+    \brief   True if the access point should stay up while the device is on a
+             network: always-on is set and a password protects it. An open
+             access point is never kept up beside a joined network.
+*/
+static bool ap_runs_beside_station(void)
+{
+    bool keep = false;
+    if (xSemaphoreTake(s_state_lock, SAS_WIFI_LOCK_WAIT_TICKS) == pdTRUE)
+    {
+        keep = s_ap_always_on && (s_ap_password[0] != '\0');
+        xSemaphoreGive(s_state_lock);
+    }
+    return keep;
+}
+
+/*!
     \brief   Stop the STA driver, reconfigure as an open fallback AP, and start
              it. See sas_wifi_init()'s doc comment for why the fallback AP is
              open rather than password-protected.
 */
 static void switch_to_ap_fallback(void)
 {
-    char ap_ssid[33]; // same size as sas_wifi_credentials_t.ssid
-    build_fallback_ssid(ap_ssid, sizeof(ap_ssid));
-
     wifi_config_t ap_config;
-    (void)memset(&ap_config, 0, sizeof(ap_config));
-    (void)strncpy((char *)ap_config.ap.ssid, ap_ssid, sizeof(ap_config.ap.ssid) - 1U);
-    ap_config.ap.ssid_len       = (uint8_t)strlen(ap_ssid);
-    ap_config.ap.channel        = SAS_WIFI_AP_FALLBACK_CHANNEL;
-    ap_config.ap.max_connection = SAS_WIFI_AP_FALLBACK_MAX_CONN;
-    ap_config.ap.authmode       = WIFI_AUTH_OPEN;
+    build_ap_config(&ap_config);
 
     // AP+STA, not AP only: scanning needs the station interface, and a user on
     // the fallback access point must be able to scan for networks. The station
